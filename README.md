@@ -132,9 +132,6 @@ remaining real-terminal acceptance steps.
 
 ## Limits
 
-Actual Ghostty gameplay and visual/input acceptance remain **unverified** in the
-implementation environment. Linux runtime acceptance is also unverified.
-
 Nonzero OS pixel geometry is required; terminals that do not provide it are
 rejected. There is no terminal-query fallback after input ownership passes to
 Crossterm, and no font aspect ratio is assumed. Suspend/resume is unsupported:
