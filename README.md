@@ -1,8 +1,18 @@
 # Ricochet
 
-A playable pixel Breakout game inside the terminal: three deterministic levels,
-one ball, three lives, and progressively damaged bricks. Graphics use reusable
-Kitty RGBA sprites; the HUD is ordinary terminal text.
+[![Rust](https://img.shields.io/badge/rust-1.94%2B-000000?logo=rust)](https://www.rust-lang.org/)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-000000?logo=apple&logoColor=white)](https://ghostty.org/)
+[![Kitty Graphics](https://img.shields.io/badge/graphics-Kitty%20protocol-00AEEF?logo=terminal)](https://sw.kovidgoyal.net/kitty/graphics-protocol/)
+[![Terminal](https://img.shields.io/badge/terminal-Ghostty%201.4%2B-8B5CF6?logo=ghostty)](https://ghostty.org/docs/install/release-notes/1-4-0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+<p align="center">
+  <img src="images/ricochet.png" alt="Ricochet gameplay preview" width="900" />
+</p>
+
+Ricochet is a terminal-first Breakout game that showcases what is possible when a Rust app uses the Kitty graphics protocol instead of a traditional GUI. The playfield is rendered as a compact, pixel-accurate scene with sub-cell motion, layered sprite placement, and a HUD that stays crisp in ordinary terminal text. The result is a game that feels like a real graphical application while staying fast, portable, and easy to run directly from the shell.
+
+This project demonstrates the practical side of Kitty graphics: dynamic sprite generation, frame batching, geometry-aware scaling, letterboxed presentation, and responsive input handling in a real-time game loop. The gameplay remains intentionally compact and deterministic, with three handcrafted levels, a fixed physics timestep, and a clean terminal lifecycle that restores the screen safely when the app exits or pauses.
 
 ## Run
 
@@ -136,3 +146,15 @@ saved scores and configuration files are outside this release's scope.
 - [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)
 - [Crossterm 0.29 events](https://docs.rs/crossterm/0.29.0/crossterm/event/index.html)
 - [Ghostty 1.4 release notes](https://ghostty.org/docs/install/release-notes/1-4-0)
+
+## Principles of Participation
+
+Everyone is invited and welcome to contribute: open issues, propose pull requests, share ideas, or help improve documentation. Participation is open to all, regardless of background or viewpoint. 
+
+This project follows the [FOSS Pluralism Manifesto](./FOSS_PLURALISM_MANIFESTO.md), which affirms respect for people, freedom to critique ideas, and space for diverse perspectives. 
+
+## License and Copyright
+
+Copyright (c) 2026, Iwan van der Kleijn
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
