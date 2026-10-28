@@ -2,5 +2,23 @@
 name = "ricochet"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.94"
+description = "A pixel Breakout game for Ghostty terminals"
 
 [dependencies]
+crossterm = { version = "0.29.0", default-features = false, features = ["events"] }
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+libc = "0.2.190"
+signal-hook = { version = "0.4.5", default-features = false }
+
+[features]
+# Explicit opt-in for the terminal diagnostic and end-state acceptance fixtures.
+dev-harness = []
+
+[[example]]
+name = "terminal_spike"
+required-features = ["dev-harness"]
+
+[[example]]
+name = "acceptance"
+required-features = ["dev-harness"]

@@ -1,0 +1,164 @@
+{
+  "kind": "synthetic-pty-not-ghostty",
+  "cases": [
+    {
+      "case": "spike-key-releases",
+      "exit": 0,
+      "seconds": 0.539,
+      "uploads": 2,
+      "peak_images": 2,
+      "peak_placements": 2,
+      "pty_frame_interval_median_ms": 16.95
+    },
+    {
+      "case": "gameplay-focus-pause-restart",
+      "exit": 0,
+      "seconds": 0.958,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53,
+      "pty_frame_interval_median_ms": 16.83
+    },
+    {
+      "case": "resize-and-font-change",
+      "exit": 0,
+      "seconds": 0.842,
+      "uploads": 27,
+      "peak_images": 9,
+      "peak_placements": 53,
+      "pty_frame_interval_median_ms": 17.0
+    },
+    {
+      "case": "quit-control-c",
+      "exit": 0,
+      "seconds": 0.175,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53
+    },
+    {
+      "case": "signal-SIGINT",
+      "exit": 0,
+      "seconds": 0.193,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53
+    },
+    {
+      "case": "signal-SIGTERM",
+      "exit": 0,
+      "seconds": 0.187,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53
+    },
+    {
+      "case": "signal-SIGHUP",
+      "exit": 0,
+      "seconds": 0.187,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53
+    },
+    {
+      "case": "signal-SIGQUIT",
+      "exit": 0,
+      "seconds": 0.19,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53
+    },
+    {
+      "case": "signal-SIGTSTP",
+      "exit": 0,
+      "seconds": 0.189,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53
+    },
+    {
+      "case": "reject-no-graphics",
+      "exit": 1,
+      "seconds": 0.012,
+      "uploads": 0,
+      "peak_images": 0,
+      "peak_placements": 0
+    },
+    {
+      "case": "reject-no-releases",
+      "exit": 1,
+      "seconds": 0.01,
+      "uploads": 0,
+      "peak_images": 0,
+      "peak_placements": 0
+    },
+    {
+      "case": "reject-silent",
+      "exit": 1,
+      "seconds": 2.012,
+      "uploads": 0,
+      "peak_images": 0,
+      "peak_placements": 0
+    },
+    {
+      "case": "fixture-won",
+      "exit": 0,
+      "seconds": 0.448,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53,
+      "pty_frame_interval_median_ms": 154.04
+    },
+    {
+      "case": "fixture-game-over",
+      "exit": 0,
+      "seconds": 0.285,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53,
+      "pty_frame_interval_median_ms": 155.18
+    },
+    {
+      "case": "fixture-damaged",
+      "exit": 0,
+      "seconds": 0.292,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53
+    },
+    {
+      "case": "fault-error",
+      "exit": 1,
+      "seconds": 0.056,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53
+    },
+    {
+      "case": "fault-panic",
+      "exit": 1,
+      "seconds": 0.042,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53
+    },
+    {
+      "case": "fps-60",
+      "exit": 0,
+      "seconds": 1.428,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53,
+      "pty_frame_interval_median_ms": 16.61
+    },
+    {
+      "case": "fps-30",
+      "exit": 0,
+      "seconds": 1.427,
+      "uploads": 9,
+      "peak_images": 9,
+      "peak_placements": 53,
+      "pty_frame_interval_median_ms": 33.61
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+//! Logical units, independent of the terminal's pixels and character grid.
+pub const WIDTH: f64 = 800.0;
+pub const HEIGHT: f64 = 600.0;
+pub const PADDLE_WIDTH: f64 = 112.0;
+pub const PADDLE_HEIGHT: f64 = 14.0;
+pub const PADDLE_Y: f64 = 556.0;
+pub const PADDLE_SPEED: f64 = 600.0;
+pub const BALL_RADIUS: f64 = 7.0;
+pub const START_SPEEDS: [f64; 3] = [300.0, 340.0, 380.0];
+pub const SPEED_STEP: f64 = 4.0;
+pub const MAX_SPEED: f64 = 520.0;
+pub const BRICK_WIDTH: f64 = 68.0;
+pub const BRICK_HEIGHT: f64 = 24.0;
+pub const GRID_X: f64 = 24.0;
+pub const GRID_Y: f64 = 70.0;
+pub const GAP: f64 = 8.0;
+pub const LIVES: u8 = 3;
+pub const DT: f64 = 1.0 / 120.0;
+pub const SEPARATION: f64 = 0.0001;
+pub const MAX_COLLISIONS: usize = 16;
