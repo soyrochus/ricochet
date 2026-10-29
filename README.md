@@ -7,14 +7,30 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 <p align="center">
-  <img src="images/ricochet.png" alt="Ricochet 0.1 gameplay preview" width="900" />
+  <img src="images/ricochet.png" alt="Ricochet 0.2.0 gameplay with shaded bricks, shadows and a glowing ball trail" width="900" />
+  <br />
+  <em>Ricochet 0.2.0 gameplay.</em>
 </p>
 
-Breakout, reimagined in the terminal with Kitty graphics. The image above shows 0.1; release 0.2 adds the procedural artwork and effects described below.
+Breakout in your terminal, with pixel graphics, smooth motion and deterministic
+gameplay. Clear three levels with three lives, using arrows or A/D to steer.
+The playfield uses Kitty graphics; scores, controls and state messages remain
+ordinary terminal text.
 
-Ricochet is a terminal-first Breakout game that showcases what is possible when a Rust app uses the Kitty graphics protocol instead of a traditional GUI. The playfield is rendered as a compact, pixel-accurate scene with sub-cell motion, layered sprite placement, and a HUD that stays crisp in ordinary terminal text. The result is a game that feels like a real graphical application while staying fast, portable, and easy to run directly from the shell.
+## New in 0.2.0
 
-This project demonstrates the practical side of Kitty graphics: dynamic sprite generation, frame batching, geometry-aware scaling, letterboxed presentation, and responsive input handling in a real-time game loop. The gameplay remains intentionally compact and deterministic, with three handcrafted levels, a fixed physics timestep, and a clean terminal lifecycle that restores the screen safely when the app exits.
+- Anti-aliased procedural art: gradient bricks, bevels, damage cracks, shadows,
+  ball glow, a grid background and a scanline/vignette overlay.
+- Ball trails, hit flashes, brick shatter, debris, paddle squash and screen shake,
+  plus a pixel-font title and state banners.
+- `--fx full|reduced|off`, so you can reduce motion and terminal output or keep
+  only the static artwork. All modes retain the same gameplay.
+- Compressed sprite atlases and a scale cap of **3 physical pixels per logical
+  unit** when zlib uploads are available; otherwise uploads remain uncompressed
+  and the cap stays at **2**. The playfield stays centred and letterboxed.
+
+All artwork and lettering are generated in Rust, with no external assets. Physics
+still runs at 120 Hz, independently of the selected 30 or 60 FPS render rate.
 
 ## Run
 
@@ -32,6 +48,10 @@ cargo run -- --help
 cargo run -- --version
 ```
 
+The defaults are **60 FPS** and **full effects**. Use `--fx reduced` for fewer
+particles, a shorter trail and no shake or overlay; `--fx off` keeps the new art
+and static banners without transient effects.
+
 Use at least **80 columns × 30 rows**, with enough physical pixels for a
 **400 × 300** playfield after reserving four text rows. A larger window improves
 detail. Resize suspension preserves progress; press **P** or **Esc** after
@@ -44,6 +64,20 @@ capabilities cause a clean exit with an explanation. An additional bounded probe
 checks zlib uploads; rejection or no reply selects uncompressed uploads and a
 2.0 scale cap, without preventing startup. `TERM`/`TERM_PROGRAM` are
 not used as capability evidence.
+
+## Why Ghostty?
+
+Ricochet targets Ghostty 1.4+ and uses the Kitty protocols for both graphics and
+input. RGBA sprites and within-cell pixel offsets let the ball move smoothly
+between character cells. Enhanced keyboard reporting supplies press, repeat and
+release events for arrows and ordinary letters, so held A/D movement stops when
+you release the key.
+
+Cached images, atlas source rectangles and placement diffing keep animation
+traffic small. Synchronized updates, when supported, group each frame into one
+visible update. Startup checks capabilities instead of relying on the terminal's
+name. Native visual and input acceptance is tracked separately in the
+[verification report](verification/REPORT.md).
 
 ## Controls
 
