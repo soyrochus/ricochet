@@ -140,7 +140,7 @@ impl Renderer {
             } else if self.ball != Some((at, h)) {
                 session
                     .graphics
-                    .place_clipped(&mut self.buffer, BALL, 1, at, 3, Some(h))?;
+                    .place_clipped(&mut self.buffer, BALL, 1, at, 3, Some(kitty::SourceRect { x: 0, y: 0, w: (2.0 * BALL_RADIUS * view.scale).round() as u32, h }))?;
                 self.ball = Some((at, h));
             }
         }

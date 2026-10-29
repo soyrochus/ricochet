@@ -21,6 +21,7 @@ use std::{
 
 pub const REQUIRED_KEYS: u8 = 1 | 2 | 8;
 pub const PROBE_ID: u32 = 0x524943;
+pub const COMPRESSION_PROBE_ID: u32 = PROBE_ID + 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Geometry {
@@ -165,6 +166,7 @@ impl Session<io::Stdout> {
 #[derive(Default, Debug)]
 pub struct Probe {
     pub graphics: bool,
+    pub compression: bool,
     pub keyboard: Option<u8>,
     pub synchronized: bool,
     pub barrier: bool,
@@ -195,6 +197,10 @@ impl Probe {
                 let text = String::from_utf8_lossy(s);
                 if text == format!("\x1b_Gi={PROBE_ID};OK\x1b\\") {
                     self.graphics = true;
+                } else if text.starts_with(&format!("\x1b_Gi={COMPRESSION_PROBE_ID};")) {
+                    self.compression = text.ends_with(";OK\x1b\\");
+                } else if text.starts_with(&format!("\x1b_Gi={PROBE_ID};")) {
+                    // Our failed query is a reply, never keyboard input.
                 } else if text.starts_with("\x1b[?") && text.ends_with('u') {
                     self.keyboard = text[3..text.len() - 1].parse().ok();
                 } else if text.starts_with("\x1b[?2026;") && text.ends_with("$y") {
@@ -225,16 +231,19 @@ impl Probe {
 pub struct Capabilities {
     pub geometry: Geometry,
     pub synchronized: bool,
+    pub compression: bool,
     pub pending: VecDeque<crossterm::event::Event>,
 }
 
 pub fn negotiate(out: &mut impl Write, shutdown: &AtomicBool) -> io::Result<Capabilities> {
     let deadline = Instant::now() + Duration::from_secs(2);
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let compressed = STANDARD.encode(crate::render::kitty::compress(&[0; 4])?);
     // No Crossterm event::poll/read/support queries are used until this phase
     // finishes. Crossterm 0.29 doesn't expose Kitty APC replies publicly.
     write!(
         out,
-        "\x1b_Ga=q,i={PROBE_ID},s=1,v=1,t=d,f=24;AAAA\x1b\\\x1b[?u\x1b[?2026$p\x1b[c"
+        "\x1b_Ga=q,i={PROBE_ID},s=1,v=1,t=d,f=24;AAAA\x1b\\\x1b_Ga=q,i={COMPRESSION_PROBE_ID},s=1,v=1,t=d,f=32,o=z;{compressed}\x1b\\\x1b[?u\x1b[?2026$p\x1b[c"
     )?;
     out.flush()?;
     let mut probe = Probe::default();
@@ -264,6 +273,7 @@ pub fn negotiate(out: &mut impl Write, shutdown: &AtomicBool) -> io::Result<Capa
     Ok(Capabilities {
         geometry,
         synchronized: probe.synchronized,
+        compression: probe.compression,
         pending: decode_startup_input(&probe.unrelated),
     })
 }

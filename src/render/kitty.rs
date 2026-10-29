@@ -2,19 +2,35 @@
 //! subsequent commands refer to the newest image with that number. Never delete
 //! the terminal's global image set. See the protocol links in README.md.
 use base64::{Engine, engine::general_purpose::STANDARD};
+use flate2::{Compression, write::ZlibEncoder};
 use std::{
     collections::BTreeSet,
     io::{self, Write},
 };
 
 pub const CHUNK: usize = 4096;
-pub const MAX_IMAGES: usize = 9;
-pub const MAX_PLACEMENTS: usize = 53;
+pub const MAX_IMAGES: usize = 16;
+pub const MAX_PLACEMENTS: usize = 192;
+
+pub fn compress(rgba: &[u8]) -> io::Result<Vec<u8>> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(rgba)?;
+    encoder.finish()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SourceRect {
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+}
 
 #[derive(Default, Debug)]
 pub struct Registry {
     images: BTreeSet<u32>,
     placements: BTreeSet<(u32, u32)>,
+    pub compression: bool,
 }
 
 impl Registry {
@@ -52,14 +68,15 @@ impl Registry {
         }
         // Register before output, so a partial transmission is also cleaned up.
         self.images.insert(number);
-        let encoded = STANDARD.encode(rgba);
+        let encoded = STANDARD.encode(if self.compression { compress(rgba)? } else { rgba.to_vec() });
         let count = encoded.len().div_ceil(CHUNK);
         for (index, data) in encoded.as_bytes().chunks(CHUNK).enumerate() {
             let more = u8::from(index + 1 < count);
             if index == 0 {
                 write!(
                     out,
-                    "\x1b_Ga=t,t=d,f=32,I={number},s={width},v={height},q=2,m={more};"
+                    "\x1b_Ga=t,t=d,f=32,I={number},s={width},v={height},{}q=2,m={more};",
+                    if self.compression { "o=z," } else { "" }
                 )?;
             } else {
                 write!(out, "\x1b_Gm={more},q=2;")?;
@@ -86,7 +103,7 @@ impl Registry {
         placement: u32,
         at: PixelPlacement,
         z: i32,
-        height: Option<u32>,
+        source: Option<SourceRect>,
     ) -> io::Result<()> {
         if !self.images.contains(&number) || placement == 0 {
             return Err(io::Error::other("unowned sprite placement"));
@@ -105,8 +122,9 @@ impl Registry {
             at.x_offset,
             at.y_offset
         )?;
-        if let Some(h) = height {
-            write!(out, ",h={h}")?;
+        if let Some(SourceRect { x, y, w, h }) = source {
+            if w == 0 || h == 0 { return Err(io::Error::other("empty source rectangle")); }
+            write!(out, ",x={x},y={y},w={w},h={h}")?;
         }
         out.extend_from_slice(b";\x1b\\");
         Ok(())
