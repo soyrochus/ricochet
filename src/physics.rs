@@ -160,6 +160,19 @@ pub struct Outcome {
     pub lost: bool,
     pub cleared: bool,
     pub contacts: usize,
+    pub events: Vec<ContactEvent>,
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ContactKind {
+    Wall { normal: Vec2 },
+    Paddle { offset: f64 },
+    Brick { index: usize, hp_after: u8 },
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ContactEvent {
+    pub kind: ContactKind,
+    pub point: Vec2,
+    pub normal: Vec2,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
@@ -294,13 +307,38 @@ pub fn step(
                 Kind::Brick(i) if !damaged.contains(&i) => {
                     damaged.push(i);
                     bricks[i].hp -= 1;
+                    result.events.push(ContactEvent {
+                        kind: ContactKind::Brick {
+                            index: bricks[i].index,
+                            hp_after: bricks[i].hp,
+                        },
+                        point: ball.position - contact.hit.normal * BALL_RADIUS,
+                        normal: contact.hit.normal,
+                    });
                     result.score += 10;
                     if bricks[i].hp == 0 {
                         result.score += 25;
                         destroyed += 1;
                     }
                 }
-                Kind::Paddle => paddle_hit = true,
+                Kind::Paddle => {
+                    paddle_hit = true;
+                    result.events.push(ContactEvent {
+                        kind: ContactKind::Paddle {
+                            offset: ((ball.position.x - paddle.centre()) / (PADDLE_WIDTH / 2.0))
+                                .clamp(-1.0, 1.0),
+                        },
+                        point: ball.position - contact.hit.normal * BALL_RADIUS,
+                        normal: contact.hit.normal,
+                    });
+                }
+                Kind::Wall => result.events.push(ContactEvent {
+                    kind: ContactKind::Wall {
+                        normal: contact.hit.normal,
+                    },
+                    point: ball.position - contact.hit.normal * BALL_RADIUS,
+                    normal: contact.hit.normal,
+                }),
                 Kind::Loss => loss = true,
                 _ => {}
             }

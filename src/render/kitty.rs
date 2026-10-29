@@ -13,7 +13,7 @@ pub const MAX_IMAGES: usize = 16;
 pub const MAX_PLACEMENTS: usize = 192;
 
 pub fn compress(rgba: &[u8]) -> io::Result<Vec<u8>> {
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::new(6));
     encoder.write_all(rgba)?;
     encoder.finish()
 }
@@ -68,7 +68,11 @@ impl Registry {
         }
         // Register before output, so a partial transmission is also cleaned up.
         self.images.insert(number);
-        let encoded = STANDARD.encode(if self.compression { compress(rgba)? } else { rgba.to_vec() });
+        let encoded = STANDARD.encode(if self.compression {
+            compress(rgba)?
+        } else {
+            rgba.to_vec()
+        });
         let count = encoded.len().div_ceil(CHUNK);
         for (index, data) in encoded.as_bytes().chunks(CHUNK).enumerate() {
             let more = u8::from(index + 1 < count);
@@ -108,6 +112,9 @@ impl Registry {
         if !self.images.contains(&number) || placement == 0 {
             return Err(io::Error::other("unowned sprite placement"));
         }
+        if source.is_some_and(|s| s.w == 0 || s.h == 0) {
+            return Err(io::Error::other("empty source rectangle"));
+        }
         if !self.placements.contains(&(number, placement))
             && self.placements.len() >= MAX_PLACEMENTS
         {
@@ -123,7 +130,6 @@ impl Registry {
             at.y_offset
         )?;
         if let Some(SourceRect { x, y, w, h }) = source {
-            if w == 0 || h == 0 { return Err(io::Error::other("empty source rectangle")); }
             write!(out, ",x={x},y={y},w={w},h={h}")?;
         }
         out.extend_from_slice(b";\x1b\\");

@@ -15,7 +15,8 @@ fn main() -> io::Result<()> {
     let signals = Signals::install()?;
     let mut session = Session::start()?;
     let mut capabilities = terminal::negotiate(&mut session.out, &signals.shutdown)?;
-    let view = Viewport::new(capabilities.geometry)
+    session.graphics.compression = capabilities.compression;
+    let view = Viewport::with_compression(capabilities.geometry, capabilities.compression)
         .ok_or_else(|| io::Error::other("resize to 80x30 with at least 400x300 drawable pixels"))?;
     let mut bytes = Vec::new();
     for (number, sprite) in [

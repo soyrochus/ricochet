@@ -9,7 +9,10 @@ use ricochet::{
     },
     terminal::{Geometry, Session},
 };
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    time::Duration,
+};
 fn geometry(columns: u16, rows: u16, cw: u32, ch: u32) -> Geometry {
     Geometry {
         columns,
@@ -103,7 +106,10 @@ fn image_numbers_and_placements_are_bounded_and_cleanup_is_owned() {
     for _ in 0..500 {
         reg.place(&mut out, 1, 1, at, 3).unwrap();
     }
-    assert!(reg.place(&mut out, 1, 100, at, 3).is_err());
+    assert!(
+        reg.place(&mut out, 1, MAX_PLACEMENTS as u32 + 1, at, 3)
+            .is_err()
+    );
     assert_eq!(reg.placement_count(), MAX_PLACEMENTS);
     out.clear();
     reg.cleanup(&mut out).unwrap();
@@ -123,49 +129,75 @@ fn frames_cache_static_scene_and_only_update_changed_bricks_and_motion() {
     game.start();
     let mut session = Session::new(Vec::new());
     let mut renderer = Renderer::default();
-    renderer.draw(&mut session, g, &game, true).unwrap();
-    assert_eq!(session.graphics.image_count(), 9);
-    assert_eq!(session.graphics.placement_count(), 53);
+    renderer
+        .draw(&mut session, g, &game, &[], Duration::ZERO, true)
+        .unwrap();
+    assert_eq!(session.graphics.image_count(), 7);
+    assert_eq!(session.graphics.placement_count(), 55);
     session.out.clear();
-    renderer.draw(&mut session, g, &game, true).unwrap();
+    renderer
+        .draw(&mut session, g, &game, &[], Duration::ZERO, true)
+        .unwrap();
     assert!(session.out.is_empty());
     game.tick(1.0);
-    renderer.draw(&mut session, g, &game, true).unwrap();
+    renderer
+        .draw(&mut session, g, &game, &[], Duration::ZERO, true)
+        .unwrap();
     let output = String::from_utf8_lossy(&session.out);
     assert!(!output.contains("a=t"));
     assert!(!output.contains("2K"));
     assert_eq!(output.matches("a=p").count(), 2);
     session.out.clear();
     game.bricks[0].hp -= 1;
-    renderer.draw(&mut session, g, &game, false).unwrap();
+    renderer
+        .draw(&mut session, g, &game, &[], Duration::ZERO, false)
+        .unwrap();
     let output = String::from_utf8_lossy(&session.out);
-    assert_eq!(output.matches("a=d,d=n").count(), 1);
+    assert_eq!(output.matches("a=d,d=n").count(), 0);
     assert_eq!(output.matches("a=p").count(), 1);
     assert!(!output.contains("a=t"));
     session.out.clear();
     game.bricks[0].hp = 0;
-    renderer.draw(&mut session, g, &game, false).unwrap();
-    assert_eq!(session.graphics.placement_count(), 52);
+    renderer
+        .draw(&mut session, g, &game, &[], Duration::ZERO, false)
+        .unwrap();
+    assert_eq!(session.graphics.placement_count(), 54);
     for i in 0..40 {
         game.start();
         game.tick(if i % 2 == 0 { 1.0 } else { -1.0 });
         session.out.clear();
-        renderer.draw(&mut session, g, &game, false).unwrap();
-        assert_eq!(session.graphics.image_count(), 9);
-        assert_eq!(session.graphics.placement_count(), 53);
+        renderer
+            .draw(&mut session, g, &game, &[], Duration::ZERO, false)
+            .unwrap();
+        assert_eq!(session.graphics.image_count(), 7);
+        assert_eq!(session.graphics.placement_count(), 55);
         assert!(!String::from_utf8_lossy(&session.out).contains("a=t"));
     }
     // Font-size changes with the same character grid invalidate scale/pixels.
     session.out.clear();
     renderer
-        .draw(&mut session, geometry(80, 30, 10, 20), &game, false)
+        .draw(
+            &mut session,
+            geometry(80, 30, 10, 20),
+            &game,
+            &[],
+            Duration::ZERO,
+            false,
+        )
         .unwrap();
     assert!(String::from_utf8_lossy(&session.out).contains("a=t"));
-    assert_eq!(session.graphics.image_count(), 9);
-    assert_eq!(session.graphics.placement_count(), 53);
+    assert_eq!(session.graphics.image_count(), 7);
+    assert_eq!(session.graphics.placement_count(), 55);
     session.out.clear();
     renderer
-        .draw(&mut session, geometry(60, 20, 10, 20), &game, false)
+        .draw(
+            &mut session,
+            geometry(60, 20, 10, 20),
+            &game,
+            &[],
+            Duration::ZERO,
+            false,
+        )
         .unwrap();
     assert_eq!(session.graphics.image_count(), 0);
     assert_eq!(session.graphics.placement_count(), 0);
@@ -178,17 +210,18 @@ fn ball_is_cropped_at_open_bottom_without_overlapping_footer() {
     let mut session = Session::new(Vec::new());
     let mut renderer = Renderer::default();
     let g = geometry(80, 30, 10, 20);
-    renderer.draw(&mut session, g, &game, false).unwrap();
+    renderer
+        .draw(&mut session, g, &game, &[], Duration::ZERO, false)
+        .unwrap();
     let v = renderer.view.unwrap();
-    let (_, py) = v.pixels(
-        game.ball.position.x - BALL_RADIUS,
-        game.ball.position.y - BALL_RADIUS,
-    );
+    let (_, py) = v.pixels(game.ball.position.x - 14.0, game.ball.position.y - 14.0);
     let expected = (v.top + v.height).saturating_sub(py);
     assert!(String::from_utf8_lossy(&session.out).contains(&format!(",h={expected};")));
-    game.ball.position.y = HEIGHT + BALL_RADIUS + 1.0;
+    game.ball.position.y = HEIGHT + 15.0;
     session.out.clear();
-    renderer.draw(&mut session, g, &game, false).unwrap();
+    renderer
+        .draw(&mut session, g, &game, &[], Duration::ZERO, false)
+        .unwrap();
     assert!(String::from_utf8_lossy(&session.out).contains("a=d,d=n"));
 }
 #[test]
@@ -209,7 +242,7 @@ fn sprite_damage_is_visible_in_geometry_and_ball_is_round() {
     assert!(count(&broken) > count(&damaged));
     let ball = sprites::ball(1.0);
     assert_eq!(ball.rgba[3], 0);
-    let centre = (7 * 14 + 7) * 4;
+    let centre = (14 * 28 + 14) * 4;
     assert_eq!(ball.rgba[centre + 3], 255);
 }
 struct FailOnce {

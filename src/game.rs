@@ -18,6 +18,17 @@ pub enum State {
     Won,
     GameOver,
 }
+/// Presentation notifications are returned, never retained in simulation state.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Event {
+    Contact(physics::ContactEvent),
+    Launched,
+    LifeLost,
+    LevelCleared { next: usize },
+    Won,
+    GameOver,
+    Restarted,
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Game {
     pub state: State,
@@ -68,18 +79,22 @@ impl Game {
     pub fn ticking(&self) -> bool {
         self.moving()
     }
-    pub fn action(&mut self, action: Action) {
+    pub fn action(&mut self, action: Action) -> Vec<Event> {
+        let mut events = Vec::new();
         if self.viewport_small {
-            return;
+            return events;
         }
         if self.resume_required {
             if action == Action::Pause {
                 self.resume_required = false;
             }
-            return;
+            return events;
         }
         match (self.state, action) {
-            (State::Title, Action::Space) => self.start(),
+            (State::Title, Action::Space) => {
+                self.start();
+                events.push(Event::Restarted);
+            }
             (State::Ready, Action::Space) => {
                 self.launch_sign = self.next_launch;
                 self.next_launch = -self.next_launch;
@@ -89,6 +104,7 @@ impl Game {
                     -self.ball.speed * angle.cos(),
                 );
                 self.state = State::Playing;
+                events.push(Event::Launched);
             }
             (State::Ready, Action::Pause) => self.state = State::Paused(Active::Ready),
             (State::Playing, Action::Pause) => self.state = State::Paused(Active::Playing),
@@ -98,9 +114,13 @@ impl Game {
                     Active::Playing => State::Playing,
                 }
             }
-            (State::Paused(_) | State::Won | State::GameOver, Action::Restart) => self.start(),
+            (State::Paused(_) | State::Won | State::GameOver, Action::Restart) => {
+                self.start();
+                events.push(Event::Restarted);
+            }
             _ => {}
         }
+        events
     }
     pub fn start(&mut self) {
         *self = Self::default();
@@ -121,15 +141,15 @@ impl Game {
             self.viewport_small = false;
         }
     }
-    pub fn tick(&mut self, direction: f64) {
+    pub fn tick(&mut self, direction: f64) -> Vec<Event> {
         if !self.ticking() {
-            return;
+            return Vec::new();
         }
         if self.state == State::Ready {
             self.paddle.x = (self.paddle.x + direction.clamp(-1.0, 1.0) * PADDLE_SPEED * DT)
                 .clamp(0.0, WIDTH - PADDLE_WIDTH);
             self.attach();
-            return;
+            return Vec::new();
         }
         let outcome = physics::step(
             &mut self.ball,
@@ -140,9 +160,11 @@ impl Game {
             DT,
         );
         self.score += outcome.score;
+        let mut events: Vec<_> = outcome.events.into_iter().map(Event::Contact).collect();
         if outcome.cleared {
             if self.level == 3 {
                 self.state = State::Won;
+                events.push(Event::Won);
             } else {
                 self.level += 1;
                 self.bricks = levels::generate(self.level);
@@ -150,16 +172,20 @@ impl Game {
                 self.paddle = Paddle::default();
                 self.attach();
                 self.state = State::Ready;
+                events.push(Event::LevelCleared { next: self.level });
             }
         } else if outcome.lost {
+            events.push(Event::LifeLost);
             self.lives -= 1;
             if self.lives == 0 {
                 self.state = State::GameOver;
+                events.push(Event::GameOver);
             } else {
                 self.paddle = Paddle::default();
                 self.attach();
                 self.state = State::Ready;
             }
         }
+        events
     }
 }

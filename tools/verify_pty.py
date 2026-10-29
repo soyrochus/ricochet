@@ -5,6 +5,8 @@ Build the release binary and dev examples first; see README.md. Uses only Python
 standard library. No game input, terminal modes or resources escape the child PTY.
 """
 import argparse
+import base64
+import zlib
 import errno
 import fcntl
 import json
@@ -23,6 +25,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 APC = re.compile(rb"\x1b_G(.*?)\x1b\\", re.S)
 PROBE_ID = 0x524943
+COMPRESSION_PROBE_ID = PROBE_ID + 1
 
 
 def size(fd, cols=100, rows=40, width=1000, height=800):
@@ -37,6 +40,9 @@ def resources(data):
     aliases, images, placements = {}, set(), set()
     peak_images = peak_placements = next_id = 0
     uploads = 0
+    compressed_uploads = 0
+    pending = None
+    sizes = {}
     for match in APC.finditer(data):
         control = match[1].split(b";", 1)[0]
         fields = dict(item.split(b"=", 1) for item in control.split(b",") if b"=" in item)
@@ -44,6 +50,10 @@ def resources(data):
         number = int(fields.get(b"I", b"0"))
         placement = int(fields.get(b"p", b"0"))
         if action == b"t":
+            assert pending is None, "interleaved image transmission"
+            pending = [int(fields[b"s"]), int(fields[b"v"]), fields.get(b"o")==b"z", bytearray()]
+            compressed_uploads += int(pending[2])
+            sizes[number] = (pending[0],pending[1])
             next_id += 1
             uploads += 1
             aliases[number] = next_id
@@ -51,6 +61,9 @@ def resources(data):
         elif action == b"p":
             assert number in aliases, ("placement before upload", number)
             placements.add((aliases[number], placement))
+            if b"w" in fields:
+                x,y,w,h=(int(fields[k]) for k in (b"x",b"y",b"w",b"h"))
+                assert w>0 and h>0 and x+w<=sizes[number][0] and y+h<=sizes[number][1], ("source rectangle",fields)
         elif action == b"d" and fields.get(b"d") in (b"n", b"N"):
             ident = aliases.get(number)
             placements = {p for p in placements if not (p[0] == ident and (not placement or p[1] == placement))}
@@ -59,11 +72,21 @@ def resources(data):
                 aliases.pop(number, None)
         elif action == b"d":
             raise AssertionError(("unscoped deletion", control))
+        if pending is not None:
+            payload=match[1].split(b";",1)[1]
+            assert len(payload)<=4096
+            pending[3].extend(payload)
+            if fields.get(b"m")==b"0":
+                rgba=base64.b64decode(pending[3],validate=True)
+                if pending[2]: rgba=zlib.decompress(rgba)
+                assert len(rgba)==pending[0]*pending[1]*4, "RGBA size"
+                pending=None
         peak_images = max(peak_images, len(images))
         peak_placements = max(peak_placements, len(placements))
+    assert pending is None, "incomplete upload"
     assert not images and not placements, ("leaked model resources", images, placements)
-    assert peak_images <= 9 and peak_placements <= 53, (peak_images, peak_placements)
-    return dict(uploads=uploads, peak_images=peak_images, peak_placements=peak_placements)
+    assert peak_images <= 16 and peak_placements <= 192, (peak_images, peak_placements)
+    return dict(uploads=uploads, compressed_uploads=compressed_uploads, peak_images=peak_images, peak_placements=peak_placements)
 
 
 def run_case(name, argv, actions=(), reply="supported", expect=0, text=None, runtime=3.0):
@@ -114,9 +137,10 @@ def run_case(name, argv, actions=(), reply="supported", expect=0, text=None, run
                     negotiated = time.monotonic()
                     if reply != "silent":
                         graphics = f"\x1b_Gi={PROBE_ID};OK\x1b\\".encode() if reply != "no-graphics" else b""
+                        compression = f"\x1b_Gi={COMPRESSION_PROBE_ID};{'EINVAL:unsupported' if reply == 'no-compression' else 'OK'}\x1b\\".encode() if reply != "missing-compression" else b""
                         flags = 3 if reply == "no-releases" else 11
                         # Include unrelated press/release input *among* the replies.
-                        os.write(fd, graphics + key(97) + key(97, 3) + f"\x1b[?{flags}u\x1b[?2026;2$y\x1b[?62;4c".encode())
+                        os.write(fd, graphics + compression + key(97) + key(97, 3) + f"\x1b[?{flags}u\x1b[?2026;2$y\x1b[?62;4c".encode())
             if status is None:
                 done, child_status = os.waitpid(pid, os.WNOHANG)
                 if done:
@@ -140,7 +164,10 @@ def run_case(name, argv, actions=(), reply="supported", expect=0, text=None, run
             assert text.encode() in data, (name, text)
         if name.startswith("fault-"):
             assert data.find(b"\x1b[?1049l") < data.find(text.encode()), "error printed before restoration"
-        report = dict(case=name, exit=code, seconds=round(time.monotonic() - began, 3), **resources(data))
+        resource_result=resources(data)
+        if reply in ("no-compression", "missing-compression"): assert resource_result["compressed_uploads"]==0
+        elif resource_result["uploads"]: assert resource_result["compressed_uploads"]==resource_result["uploads"]
+        report = dict(case=name, exit=code, seconds=round(time.monotonic() - began, 3), **resource_result)
         # These are PTY output intervals, not actual terminal presentation timing.
         intervals = [(b-a)*1000 for a,b in zip(frame_times,frame_times[1:]) if b-a > 0.001]
         if intervals:
@@ -171,6 +198,11 @@ def main():
         cases.append(run_case(f"fixture-{fixture}",["target/release/examples/acceptance",fixture],[(0.15,key(114)),(0.25,key(113))],text=message))
     for fault in ["error","panic"]:
         cases.append(run_case(f"fault-{fault}",["target/release/examples/acceptance",fault],expect=1,text="development injected"))
+    for fallback in ["no-compression", "missing-compression"]:
+        cases.append(run_case(f"fallback-{fallback}", binary, [(0.5,key(113))],reply=fallback))
+    for mode in ["reduced", "off"]:
+        cases.append(run_case(f"fx-{mode}", [*binary,"--fx",mode], [(0.1,key(32)),(0.2,key(32)),(0.5,key(113))]))
+    cases.append(run_case("effects-scene", ["target/release/examples/acceptance","effects"], [(10.8,key(113))], runtime=13.0,text="YOU WON"))
     cases.append(run_case("fps-60",binary,[(0.05,key(32)),(0.12,key(32)),(1.4,key(113))],runtime=3.0))
     cases.append(run_case("fps-30",[*binary,"--fps","30"],[(0.05,key(32)),(0.12,key(32)),(1.4,key(113))],runtime=3.0))
     result = {"kind":"synthetic-pty-not-ghostty", "cases":cases}

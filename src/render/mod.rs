@@ -1,16 +1,20 @@
+pub mod font;
+pub mod fx;
 pub mod kitty;
 pub mod sprites;
 use crate::{
     constants::*,
-    game::{Game, State},
-    terminal::Session,
+    game::{Event, Game, State},
+    physics::Vec2,
+    terminal::{Geometry, Session},
 };
-use crate::{
-    constants::{HEIGHT, WIDTH},
-    terminal::Geometry,
+use kitty::{PixelPlacement, SourceRect};
+use sprites::{AtlasFrame, Frame};
+use std::{
+    collections::BTreeMap,
+    io::{self, Write},
+    time::Duration,
 };
-use kitty::PixelPlacement;
-use std::io::{self, Write};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Viewport {
@@ -23,146 +27,165 @@ pub struct Viewport {
     pub cell_width: u32,
     pub cell_height: u32,
 }
-
-const VARIANTS: [(u8, u8); 6] = [(1, 1), (2, 2), (2, 1), (3, 3), (3, 2), (3, 1)];
-// These are aliases (image numbers), not pre-existing terminal image IDs.
 const BACKGROUND: u32 = 0x524900;
-const BALL: u32 = BACKGROUND + 1;
-const PADDLE: u32 = BACKGROUND + 2;
-fn brick_number(initial: u8, hp: u8) -> u32 {
-    BACKGROUND
-        + 3
-        + VARIANTS
-            .iter()
-            .position(|v| *v == (initial, hp))
-            .expect("valid brick HP") as u32
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Placement {
+    image: u32,
+    at: PixelPlacement,
+    source: SourceRect,
+    z: i32,
 }
-
 pub struct Renderer {
-    geometry: Option<Geometry>,
+    geometry: Option<(Geometry, bool)>,
     pub view: Option<Viewport>,
-    bricks: [Option<u32>; 50],
-    paddle: Option<PixelPlacement>,
-    ball: Option<(PixelPlacement, u32)>,
+    pub effects: fx::Effects,
+    frames: BTreeMap<Frame, (u32, AtlasFrame)>,
+    placed: BTreeMap<u32, Placement>,
     hud: Vec<String>,
     buffer: Vec<u8>,
 }
 impl Default for Renderer {
     fn default() -> Self {
+        Self::new(fx::Level::Full)
+    }
+}
+impl Renderer {
+    pub fn new(level: fx::Level) -> Self {
         Self {
             geometry: None,
             view: None,
-            bricks: [None; 50],
-            paddle: None,
-            ball: None,
+            effects: fx::Effects::new(level),
+            frames: BTreeMap::new(),
+            placed: BTreeMap::new(),
             hud: Vec::new(),
             buffer: Vec::new(),
         }
     }
-}
-impl Renderer {
     pub fn draw(
         &mut self,
         session: &mut Session<impl Write>,
         geometry: Geometry,
         game: &Game,
+        events: &[Event],
+        elapsed: Duration,
         synchronized: bool,
     ) -> io::Result<()> {
         self.buffer.clear();
-        if self.geometry != Some(geometry) {
+        self.effects.advance(elapsed, game);
+        self.effects.ingest(events, game);
+        self.effects.observe(game);
+        let compression = session.graphics.compression;
+        if self.geometry != Some((geometry, compression)) {
             session.graphics.cleanup(&mut self.buffer)?;
-            self.geometry = Some(geometry);
-            self.view = Viewport::new(geometry);
-            self.bricks = [None; 50];
-            self.paddle = None;
-            self.ball = None;
+            self.geometry = Some((geometry, compression));
+            self.view = Viewport::with_compression(geometry, compression);
+            self.placed.clear();
+            self.frames.clear();
             self.hud.clear();
             self.buffer
                 .extend_from_slice(b"\x1b[0m\x1b[48;2;10;15;25m\x1b[2J");
             if let Some(view) = self.view {
-                self.upload(session, BACKGROUND, sprites::background(view.scale))?;
-                self.upload(session, BALL, sprites::ball(view.scale))?;
-                self.upload(session, PADDLE, sprites::paddle(view.scale))?;
-                for (initial, hp) in VARIANTS {
-                    self.upload(
-                        session,
-                        brick_number(initial, hp),
-                        sprites::brick(view.scale, initial, hp),
+                for (index, atlas) in
+                    sprites::generate(view.scale, self.effects.level == fx::Level::Full)
+                        .into_iter()
+                        .enumerate()
+                {
+                    let number = BACKGROUND + index as u32;
+                    session.graphics.upload(
+                        &mut self.buffer,
+                        number,
+                        atlas.sprite.width,
+                        atlas.sprite.height,
+                        &atlas.sprite.rgba,
                     )?;
+                    for frame in atlas.frames {
+                        self.frames.insert(frame.frame, (number, frame));
+                    }
                 }
-                session
-                    .graphics
-                    .place(&mut self.buffer, BACKGROUND, 1, view.at(0.0, 0.0), 0)?;
             }
         }
+        let mut desired = BTreeMap::new();
         if let Some(view) = self.view {
-            let mut desired = [None; 50];
+            let shake = view.clamp_shake(self.effects.shake_offset());
+            let mut draws = vec![fx::Draw {
+                id: 1,
+                position: Vec2::default(),
+                frame: Frame::Background,
+                z: 0,
+            }];
             for brick in game.bricks.iter().filter(|b| b.hp > 0) {
-                desired[brick.index] = Some(brick_number(brick.initial_hp, brick.hp));
+                draws.push(fx::Draw {
+                    id: 2 + brick.index as u32,
+                    position: Vec2::new(brick.rect.x, brick.rect.y),
+                    frame: Frame::Brick {
+                        initial: brick.initial_hp,
+                        hp: brick.hp,
+                        flash: self.effects.flashing(brick.index),
+                    },
+                    z: 1,
+                });
             }
-            for (index, &number) in desired.iter().enumerate() {
-                if self.bricks[index] == number {
-                    continue;
-                }
-                let pid = index as u32 + 1;
-                if let Some(old) = self.bricks[index] {
-                    session.graphics.remove(&mut self.buffer, old, pid)?;
-                }
-                if let Some(new) = number {
-                    let x = GRID_X + (index % 10) as f64 * (BRICK_WIDTH + GAP);
-                    let y = GRID_Y + (index / 10) as f64 * (BRICK_HEIGHT + GAP);
-                    session
-                        .graphics
-                        .place(&mut self.buffer, new, pid, view.at(x, y), 1)?;
-                }
-                self.bricks[index] = number;
+            draws.push(fx::Draw {
+                id: 52,
+                position: Vec2::new(game.paddle.x, PADDLE_Y),
+                frame: Frame::Paddle(self.effects.paddle_frame()),
+                z: 4,
+            });
+            draws.push(fx::Draw {
+                id: 53,
+                position: game.ball.position,
+                frame: Frame::Ball,
+                z: 6,
+            });
+            draws.extend(self.effects.placements(game));
+            if self.effects.level == fx::Level::Full {
+                draws.push(fx::Draw {
+                    id: 168,
+                    position: Vec2::default(),
+                    frame: Frame::Overlay,
+                    z: 8,
+                });
             }
-            let paddle = view.at(game.paddle.x, PADDLE_Y);
-            if self.paddle != Some(paddle) {
-                session
-                    .graphics
-                    .place(&mut self.buffer, PADDLE, 1, paddle, 2)?;
-                self.paddle = Some(paddle);
-            }
-            let x = game.ball.position.x - BALL_RADIUS;
-            let y = game.ball.position.y - BALL_RADIUS;
-            let at = view.at(x, y);
-            let (_, py) = view.pixels(x, y);
-            // The bottom is open physically, but graphics are clipped before the
-            // footer rows while the ball crosses the life-loss boundary.
-            let h = (view.top + view.height)
-                .saturating_sub(py)
-                .min((2.0 * BALL_RADIUS * view.scale).round() as u32);
-            if h == 0 {
-                if self.ball.take().is_some() {
-                    session.graphics.remove(&mut self.buffer, BALL, 1)?;
+            for draw in draws {
+                let (image, frame) = &self.frames[&draw.frame];
+                if let Some((at, source)) =
+                    view.clipped(draw.position + frame.origin, frame.source, shake)
+                {
+                    desired.insert(
+                        draw.id,
+                        Placement {
+                            image: *image,
+                            at,
+                            source,
+                            z: draw.z,
+                        },
+                    );
                 }
-            } else if self.ball != Some((at, h)) {
-                session
-                    .graphics
-                    .place_clipped(&mut self.buffer, BALL, 1, at, 3, Some(kitty::SourceRect { x: 0, y: 0, w: (2.0 * BALL_RADIUS * view.scale).round() as u32, h }))?;
-                self.ball = Some((at, h));
             }
         }
+        for (&id, old) in &self.placed {
+            if desired.get(&id).is_none_or(|new| new.image != old.image) {
+                session.graphics.remove(&mut self.buffer, old.image, id)?;
+            }
+        }
+        for (&id, new) in &desired {
+            if self.placed.get(&id) != Some(new) {
+                session.graphics.place_clipped(
+                    &mut self.buffer,
+                    new.image,
+                    id,
+                    new.at,
+                    new.z,
+                    Some(new.source),
+                )?;
+            }
+        }
+        self.placed = desired;
         self.text(geometry, game)?;
         if !self.buffer.is_empty() {
             kitty::frame(&mut session.out, &self.buffer, synchronized)?;
         }
         Ok(())
-    }
-    fn upload(
-        &mut self,
-        session: &mut Session<impl Write>,
-        number: u32,
-        sprite: sprites::Sprite,
-    ) -> io::Result<()> {
-        session.graphics.upload(
-            &mut self.buffer,
-            number,
-            sprite.width,
-            sprite.height,
-            &sprite.rgba,
-        )
     }
     fn text(&mut self, geometry: Geometry, game: &Game) -> io::Result<()> {
         let state = if self.view.is_none() {
@@ -231,6 +254,9 @@ impl Renderer {
 }
 impl Viewport {
     pub fn new(geometry: Geometry) -> Option<Self> {
+        Self::with_compression(geometry, false)
+    }
+    pub fn with_compression(geometry: Geometry, compression: bool) -> Option<Self> {
         if geometry.columns < 80 || geometry.rows < 30 {
             return None;
         }
@@ -240,7 +266,7 @@ impl Viewport {
         // Bound large-window sprite memory; centre and letterbox at all sizes.
         let scale = (f64::from(available_w) / WIDTH)
             .min(f64::from(available_h) / HEIGHT)
-            .min(2.0);
+            .min(if compression { 3.0 } else { 2.0 });
         let width = (WIDTH * scale).floor() as u32;
         let height = (HEIGHT * scale).floor() as u32;
         if width < 400 || height < 300 {
@@ -256,6 +282,59 @@ impl Viewport {
             cell_width,
             cell_height,
         })
+    }
+    pub fn clamp_shake(self, offset: Vec2) -> Vec2 {
+        let right = self.cell_width * u32::from(self.geometry.columns) - self.left - self.width;
+        let above = self.top - 2 * self.cell_height;
+        let below = self.cell_height * u32::from(self.geometry.rows - 2) - self.top - self.height;
+        Vec2::new(
+            offset.x.clamp(
+                -f64::from(self.left) / self.scale,
+                f64::from(right) / self.scale,
+            ),
+            offset.y.clamp(
+                -f64::from(above) / self.scale,
+                f64::from(below) / self.scale,
+            ),
+        )
+    }
+    fn clipped(
+        self,
+        position: Vec2,
+        mut source: SourceRect,
+        shake: Vec2,
+    ) -> Option<(PixelPlacement, SourceRect)> {
+        let sx = (shake.x * self.scale).round() as i64;
+        let sy = (shake.y * self.scale).round() as i64;
+        let left = i64::from(self.left) + sx;
+        let top = i64::from(self.top) + sy;
+        let x = i64::from(self.left) + (position.x * self.scale).round() as i64 + sx;
+        let y = i64::from(self.top) + (position.y * self.scale).round() as i64 + sy;
+        let x0 = x.max(left).max(0);
+        let y0 = y.max(top).max(i64::from(2 * self.cell_height));
+        let x1 = (x + i64::from(source.w))
+            .min(left + i64::from(self.width))
+            .min(i64::from(self.geometry.columns) * i64::from(self.cell_width));
+        let y1 = (y + i64::from(source.h))
+            .min(top + i64::from(self.height))
+            .min(i64::from(self.geometry.rows - 2) * i64::from(self.cell_height));
+        if x1 <= x0 || y1 <= y0 {
+            return None;
+        }
+        source.x += (x0 - x) as u32;
+        source.y += (y0 - y) as u32;
+        source.w = (x1 - x0) as u32;
+        source.h = (y1 - y0) as u32;
+        let (px, py) = (x0 as u32, y0 as u32);
+        Some((
+            PixelPlacement {
+                column: px / self.cell_width,
+                row: py / self.cell_height,
+                x_offset: px % self.cell_width,
+                y_offset: py % self.cell_height,
+            },
+            source,
+        ))
     }
     pub fn pixels(self, x: f64, y: f64) -> (u32, u32) {
         (

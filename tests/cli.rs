@@ -15,7 +15,10 @@ fn help_version_and_bad_arguments_work_without_terminal() {
     }
     assert_eq!(
         parse(["--fps".to_owned(), "30".to_owned()]).unwrap(),
-        Cli::Run { fps: 30 }
+        Cli::Run {
+            fps: 30,
+            fx: ricochet::render::fx::Level::Full
+        }
     );
     let output = Command::new(env!("CARGO_BIN_EXE_ricochet"))
         .output()

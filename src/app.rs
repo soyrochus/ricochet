@@ -1,12 +1,13 @@
 use crate::{
-    game::Game,
+    game::{Event as GameEvent, Game},
     input::{Action, Input},
-    render::{Renderer, Viewport},
+    render::{Renderer, Viewport, fx::Level as FxLevel},
     terminal::{self, Geometry, Session, Signals},
     timing::Clock,
 };
 use crossterm::event::{self, Event};
 use std::{
+    collections::VecDeque,
     io,
     panic::{self, UnwindSafe},
     sync::atomic::Ordering,
@@ -35,16 +36,17 @@ pub fn restored_errors(
     }
 }
 
-pub const HELP: &str = "Ricochet - pixel Breakout for Ghostty 1.4+ on macOS/Linux\n\nUsage: ricochet [--fps 30|60] [--help] [--version]\n\nLeft/Right or A/D: move while held (both directions cancel)\nSpace: start / launch   P or Escape: pause / resume\nR: restart from pause or end screen   Q / Ctrl-C: quit\n\nRequires interactive stdin/stdout, Kitty graphics and enhanced key releases,\nand at least 80x30 cells with 400x300 drawable pixels.\nSIGTSTP exits cleanly; Ctrl-Z is ignored; suspend/resume is unsupported.\n";
+pub const HELP: &str = "Ricochet - pixel Breakout for Ghostty 1.4+ on macOS/Linux\n\nUsage: ricochet [--fps 30|60] [--fx full|reduced|off] [--help] [--version]\n\n--fps 30|60          Render rate (default: 60)\n--fx full|reduced|off Effects level (default: full); reduced omits shake/overlay\n                     and limits particles/trail; off keeps static art/banners\n\nLeft/Right or A/D: move while held (both directions cancel)\nSpace: start / launch   P or Escape: pause / resume\nR: restart from pause or end screen   Q / Ctrl-C: quit\n\nRequires interactive stdin/stdout, Kitty graphics and enhanced key releases,\nand at least 80x30 cells with 400x300 drawable pixels.\nSIGTSTP exits cleanly; Ctrl-Z is ignored; suspend/resume is unsupported.\n";
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Cli {
     Help,
     Version,
-    Run { fps: u32 },
+    Run { fps: u32, fx: FxLevel },
 }
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     let mut fps = 60;
+    let mut fx = FxLevel::Full;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -57,20 +59,49 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
                     _ => return Err("--fps requires 30 or 60".to_owned()),
                 }
             }
+            "--fx" => {
+                fx = match args.next().as_deref() {
+                    Some("full") => FxLevel::Full,
+                    Some("reduced") => FxLevel::Reduced,
+                    Some("off") => FxLevel::Off,
+                    _ => return Err("--fx requires full, reduced or off".to_owned()),
+                }
+            }
             _ => return Err(format!("unknown argument: {arg} (try --help)")),
         }
     }
-    Ok(Cli::Run { fps })
+    Ok(Cli::Run { fps, fx })
 }
 
 /// Pure controller shared by the real event loop and acceptance tests.
-#[derive(Default)]
 pub struct Controller {
     pub game: Game,
     pub input: Input,
     pub clock: Clock,
+    events: VecDeque<GameEvent>,
+}
+impl Default for Controller {
+    fn default() -> Self {
+        Self {
+            game: Game::default(),
+            input: Input::default(),
+            clock: Clock::default(),
+            events: VecDeque::with_capacity(256),
+        }
+    }
 }
 impl Controller {
+    pub fn queue_events(&mut self, events: impl IntoIterator<Item = GameEvent>) {
+        for event in events {
+            if self.events.len() == 256 {
+                self.events.pop_front();
+            }
+            self.events.push_back(event);
+        }
+    }
+    pub fn drain_events(&mut self) -> Vec<GameEvent> {
+        self.events.drain(..).collect()
+    }
     /// Returns true when quitting. Any discontinuity invalidates accumulated
     /// time and held keys; focus gain never resumes.
     pub fn event(&mut self, event: Event) -> bool {
@@ -81,7 +112,8 @@ impl Controller {
                         return true;
                     }
                     let before = (self.game.state, self.game.resume_required);
-                    self.game.action(action);
+                    let events = self.game.action(action);
+                    self.queue_events(events);
                     if before != (self.game.state, self.game.resume_required) {
                         self.input.clear();
                         self.clock.reset();
@@ -106,7 +138,8 @@ impl Controller {
         let count = self.clock.advance(elapsed, self.game.ticking());
         for _ in 0..count {
             let previous = self.game.state;
-            self.game.tick(self.input.direction());
+            let events = self.game.tick(self.input.direction());
+            self.queue_events(events);
             if self.game.state != previous {
                 self.input.clear();
                 self.clock.reset();
@@ -116,26 +149,31 @@ impl Controller {
     }
 }
 
-pub fn run(fps: u32) -> io::Result<()> {
-    run_game(fps, Game::default())
+pub fn run(fps: u32, fx: FxLevel) -> io::Result<()> {
+    run_game_with_fx(fps, Game::default(), fx)
 }
 pub fn run_game(fps: u32, game: Game) -> io::Result<()> {
+    run_game_with_fx(fps, game, FxLevel::Full)
+}
+pub fn run_game_with_fx(fps: u32, game: Game, fx: FxLevel) -> io::Result<()> {
     if !matches!(fps, 30 | 60) {
         return Err(io::Error::other("FPS must be 30 or 60"));
     }
     let signals = Signals::install()?;
     let mut session = Session::start()?;
     let mut capabilities = terminal::negotiate(&mut session.out, &signals.shutdown)?;
+    session.graphics.compression = capabilities.compression;
     let mut geometry = capabilities.geometry;
     let mut control = Controller {
         game,
         ..Controller::default()
     };
     control.geometry(geometry);
-    let mut renderer = Renderer::default();
+    let mut renderer = Renderer::new(fx);
     let interval = Duration::from_secs_f64(1.0 / f64::from(fps));
     let mut previous = Instant::now();
     let mut render_at = previous;
+    let mut rendered_at = previous;
     let mut geometry_at = previous;
     loop {
         if signals.shutdown.load(Ordering::Relaxed) {
@@ -186,12 +224,16 @@ pub fn run_game(fps: u32, game: Game) -> io::Result<()> {
             control.elapsed(elapsed);
         }
         if now >= render_at {
+            let events = control.drain_events();
             renderer.draw(
                 &mut session,
                 geometry,
                 &control.game,
+                &events,
+                now.saturating_duration_since(rendered_at),
                 capabilities.synchronized,
             )?;
+            rendered_at = now;
             render_at += interval;
             if render_at <= Instant::now() {
                 render_at = Instant::now() + interval;

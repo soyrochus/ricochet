@@ -7,14 +7,14 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 <p align="center">
-  <img src="images/ricochet.png" alt="Ricochet gameplay preview" width="900" />
+  <img src="images/ricochet.png" alt="Ricochet 0.1 gameplay preview" width="900" />
 </p>
 
-Breakout, reimagined in the terminal with Kitty graphics.
+Breakout, reimagined in the terminal with Kitty graphics. The image above shows 0.1; release 0.2 adds the procedural artwork and effects described below.
 
 Ricochet is a terminal-first Breakout game that showcases what is possible when a Rust app uses the Kitty graphics protocol instead of a traditional GUI. The playfield is rendered as a compact, pixel-accurate scene with sub-cell motion, layered sprite placement, and a HUD that stays crisp in ordinary terminal text. The result is a game that feels like a real graphical application while staying fast, portable, and easy to run directly from the shell.
 
-This project demonstrates the practical side of Kitty graphics: dynamic sprite generation, frame batching, geometry-aware scaling, letterboxed presentation, and responsive input handling in a real-time game loop. The gameplay remains intentionally compact and deterministic, with three handcrafted levels, a fixed physics timestep, and a clean terminal lifecycle that restores the screen safely when the app exits or pauses.
+This project demonstrates the practical side of Kitty graphics: dynamic sprite generation, frame batching, geometry-aware scaling, letterboxed presentation, and responsive input handling in a real-time game loop. The gameplay remains intentionally compact and deterministic, with three handcrafted levels, a fixed physics timestep, and a clean terminal lifecycle that restores the screen safely when the app exits.
 
 ## Run
 
@@ -26,6 +26,8 @@ services are needed.
 ```sh
 cargo run --release
 cargo run --release -- --fps 30
+cargo run --release -- --fx reduced
+cargo run --release -- --fx off
 cargo run -- --help
 cargo run -- --version
 ```
@@ -37,8 +39,10 @@ restoring a playable size. A focus change pauses an active run and never resumes
 it automatically.
 
 The startup probe checks actual Kitty graphics support and enhanced keyboard
-flags **1 + 2 + 8**, including ordinary-letter release events. Unsupported
-capabilities cause a clean exit with an explanation. `TERM`/`TERM_PROGRAM` are
+flags **1 + 2 + 8**, including ordinary-letter release events. Missing required
+capabilities cause a clean exit with an explanation. An additional bounded probe
+checks zlib uploads; rejection or no reply selects uncompressed uploads and a
+2.0 scale cap, without preventing startup. `TERM`/`TERM_PROGRAM` are
 not used as capability evidence.
 
 ## Controls
@@ -57,10 +61,34 @@ Repeated one-shot keys are ignored. A lost life keeps score, brick damage and
 speed; a new level keeps score/lives and resets speed. Launches alternate right
 and left. Clear all three levels to win.
 
+## Artwork and effects
+
+All images and the embedded 5×7 pixel alphabet are generated in Rust. Anti-aliased
+edges, gradients, bevels, geometric cracks, shadows and ball glow remain enabled
+in every mode. Cached atlases supply animation frames through source rectangles;
+changing a frame sends a placement command and never uploads new image data.
+
+`--fx full|reduced|off` defaults to `full`. Gameplay is identical in all modes,
+at either render rate and at every playable viewport size.
+
+| Feature | full | reduced | off |
+| --- | --- | --- | --- |
+| New art, shadows, glow, static logo/banners | Yes | Yes | Yes |
+| Logo sweep, banner fade, hit flash, shatter, paddle squash | Yes | Yes | No |
+| Debris | 96 chips; 10 per destruction / 4 per hit | 32 chips; 4 / 2 | No |
+| Ball trail | Up to 8 ghosts | Up to 3 | No |
+| Shake and scanline/vignette overlay | Yes | No | No |
+
+Effects use their own clock, capped at 50 ms per rendered frame, with fixed
+1/120-second particle integration and deterministic event seeds. Pause, a small
+viewport and pending explicit resume freeze effects. Resizing preserves their
+logical positions; restart and a new level clear them. Graphical banners add to
+the ordinary text HUD, including READY, level changes, PAUSED and end states.
+
 ## Implementation
 
 - `game.rs`, `levels.rs`, `constants.rs`: explicit states and deterministic rules
-  in an 800 × 600 logical world. All gameplay constants match [SPEC.md](SPEC.md).
+  in an 800 × 600 logical world. All gameplay constants match [the baseline spec](specs/SPEC-init-001.md).
 - `physics.rs`: continuous circle/rectangle face and rounded-corner collision
   detection. The moving paddle is swept up to its wall clamp, then treated as
   stationary. Top contacts use the specified ±65° angle and horizontal minimum.
@@ -74,17 +102,30 @@ and left. Clear all three levels to win.
   preserves intervening game inputs. Crossterm 0.29 does not expose Kitty APC
   replies publicly. After negotiation only Crossterm reads input; pixel geometry
   is read through its OS `TIOCGWINSZ` wrapper every 250 ms and on resize events.
-- `render/`: nine procedural RGBA images and at most 53 placements, with
-  terminal-allocated image IDs addressed through owned image-number aliases.
-  Pixel positions map to cursor cells plus within-cell offsets. Moving
-  placements retain their IDs; static bricks and HUD lines update only when
-  changed. A frame is batched and flushed once. Synchronized updates are queried
-  and used when supported; guards pair begin/end commands on errors.
+- `physics.rs` and `game.rs` return ordered contact and transition events;
+  events are never stored in simulation state. `Controller` retains the newest
+  256 notifications and drains them once per rendered frame. Input actions return
+  launch/restart notifications immediately; physics ticks return contacts and
+  life/level/end transitions.
+- `render/fx.rs`: logical effect positions and fixed pools; no Kitty commands.
+- `render/sprites.rs`, `render/font.rs`: adaptive 4×4 edge coverage, straight RGBA,
+  padded atlases and generated lettering. `flate2` uses only its pure Rust
+  backend; no image, font or randomness dependency is needed.
+- `render/`: seven cached images in full mode (six in reduced/off), below the
+  **16-image / 192-placement** registry limits. Fixed IDs cover background 1,
+  bricks 2–51, paddle 52, ball 53, trail 54–61, shatter 62–69, chips 70–165,
+  banners 166–167 and overlay 168. Exhausted effect pools reuse the oldest slot.
+  All nine z-layers stay inside the graphical playfield. Placement diffing emits
+  only changes; ordinary text HUD lines also update only when changed. Frames
+  are batched and flushed once, with guarded synchronized updates when supported.
 
-Scale is uniform, capped at 2 physical pixels per logical unit to bound sprite
-memory, and centred with letterboxing. Only rendering rounds to pixels. Images
-are regenerated on geometry changes. The open-bottom ball is cropped before the
-footer. Cleanup cancels partial protocol strings, removes owned images, restores
+Scale is uniform, capped at **3 physical pixels per logical unit with compression**
+(**2 without it**), and centred with letterboxing. The complete scale-3 decoded
+image set stays below 64 MiB. Uploads use zlib before base64 with 4096-byte chunks.
+Images regenerate on geometry changes. Source rectangles clip every sprite,
+including ball glow and ghosts at the open bottom, before the footer. Shake is
+limited by the available letterbox margins on each side. Cleanup cancels partial
+protocol strings, removes owned images, restores
 keyboard/focus/cursor/screen/colours and raw mode, then reports errors. Panics
 unwind through the same guard. SIGINT, SIGTERM, SIGHUP, SIGQUIT and SIGTSTP notify
 the loop through atomic flags, without terminal I/O inside signal handlers.
@@ -95,6 +136,7 @@ the loop through atomic flags, without terminal I/O inside signal handlers.
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
+cargo test --features dev-harness
 cargo build --release
 ```
 
@@ -115,6 +157,13 @@ cargo run --release --features dev-harness --example terminal_spike
 cargo run --release --features dev-harness --example acceptance -- won
 cargo run --release --features dev-harness --example acceptance -- game-over
 cargo run --release --features dev-harness --example acceptance -- damaged
+
+# An 11-second repeating presentation scene: logo, all banners, damage,
+# destruction, chips, trail, squash, shake, and an automatic mid-shatter pause.
+# Q quits; P pauses; resizing below minimum requires P to resume.
+cargo run --release --features dev-harness --example acceptance -- effects
+cargo run --release --features dev-harness --example acceptance -- effects --fx reduced
+cargo run --release --features dev-harness --example acceptance -- effects --fx off
 cargo run --release --features dev-harness --example acceptance -- error
 cargo run --release --features dev-harness --example acceptance -- panic
 
@@ -123,12 +172,18 @@ cargo build --release --examples --features dev-harness
 cargo build --release
 python3 tools/verify_pty.py --output verification/pty-results.json
 cargo test --all-features
+
+# No-terminal release measurements: decoded memory, complete upload bytes,
+# regeneration time and 600 rendered frames under maximum effects load.
+cargo run --release --features dev-harness --example visual_metrics
 ```
 
 The PTY harness supplies synthetic capability/key/focus/resize responses and
 models resource ownership. **It does not establish Ghostty compatibility.**
-See [verification/REPORT.md](verification/REPORT.md) for observed results and the
-remaining real-terminal acceptance steps.
+See [verification/REPORT.md](verification/REPORT.md) for measured budgets, the
+shipped atlas path and remaining real-terminal acceptance. The release implements
+[SPEC-evolve-002.md](specs/SPEC-evolve-002.md); automated checks and offline artwork
+inspection do not establish native Ghostty visual or input acceptance.
 
 ## Limits
 

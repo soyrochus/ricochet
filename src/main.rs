@@ -4,7 +4,7 @@ fn execute() -> Result<(), String> {
     match app::parse(std::env::args().skip(1))? {
         Cli::Help => print!("{}", app::HELP),
         Cli::Version => println!("ricochet {}", env!("CARGO_PKG_VERSION")),
-        Cli::Run { fps } => app::run(fps).map_err(|e: io::Error| e.to_string())?,
+        Cli::Run { fps, fx } => app::run(fps, fx).map_err(|e: io::Error| e.to_string())?,
     }
     Ok(())
 }

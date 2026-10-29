@@ -23,3 +23,7 @@ required-features = ["dev-harness"]
 [[example]]
 name = "acceptance"
 required-features = ["dev-harness"]
+
+[[example]]
+name = "visual_metrics"
+required-features = ["dev-harness"]

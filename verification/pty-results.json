@@ -4,91 +4,108 @@
     {
       "case": "spike-key-releases",
       "exit": 0,
-      "seconds": 0.539,
+      "seconds": 0.576,
       "uploads": 2,
+      "compressed_uploads": 2,
       "peak_images": 2,
       "peak_placements": 2,
-      "pty_frame_interval_median_ms": 16.95
+      "pty_frame_interval_median_ms": 16.82
     },
     {
       "case": "gameplay-focus-pause-restart",
       "exit": 0,
-      "seconds": 0.958,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53,
-      "pty_frame_interval_median_ms": 16.83
+      "seconds": 1.099,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 60,
+      "pty_frame_interval_median_ms": 16.8
     },
     {
       "case": "resize-and-font-change",
       "exit": 0,
-      "seconds": 0.842,
-      "uploads": 27,
-      "peak_images": 9,
-      "peak_placements": 53,
-      "pty_frame_interval_median_ms": 17.0
+      "seconds": 0.84,
+      "uploads": 21,
+      "compressed_uploads": 21,
+      "peak_images": 7,
+      "peak_placements": 60,
+      "pty_frame_interval_median_ms": 16.71
     },
     {
       "case": "quit-control-c",
       "exit": 0,
-      "seconds": 0.175,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53
+      "seconds": 0.178,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 55,
+      "pty_frame_interval_median_ms": 37.38
     },
     {
       "case": "signal-SIGINT",
       "exit": 0,
-      "seconds": 0.193,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53
+      "seconds": 0.189,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 55,
+      "pty_frame_interval_median_ms": 43.83
     },
     {
       "case": "signal-SIGTERM",
       "exit": 0,
-      "seconds": 0.187,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53
+      "seconds": 0.189,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 55,
+      "pty_frame_interval_median_ms": 44.07
     },
     {
       "case": "signal-SIGHUP",
       "exit": 0,
-      "seconds": 0.187,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53
+      "seconds": 0.188,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 55,
+      "pty_frame_interval_median_ms": 37.94
     },
     {
       "case": "signal-SIGQUIT",
       "exit": 0,
-      "seconds": 0.19,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53
+      "seconds": 0.185,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 55,
+      "pty_frame_interval_median_ms": 45.34
     },
     {
       "case": "signal-SIGTSTP",
       "exit": 0,
-      "seconds": 0.189,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53
+      "seconds": 0.188,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 55,
+      "pty_frame_interval_median_ms": 44.44
     },
     {
       "case": "reject-no-graphics",
       "exit": 1,
-      "seconds": 0.012,
+      "seconds": 0.014,
       "uploads": 0,
+      "compressed_uploads": 0,
       "peak_images": 0,
       "peak_placements": 0
     },
     {
       "case": "reject-no-releases",
       "exit": 1,
-      "seconds": 0.01,
+      "seconds": 0.012,
       "uploads": 0,
+      "compressed_uploads": 0,
       "peak_images": 0,
       "peak_placements": 0
     },
@@ -97,68 +114,127 @@
       "exit": 1,
       "seconds": 2.012,
       "uploads": 0,
+      "compressed_uploads": 0,
       "peak_images": 0,
       "peak_placements": 0
     },
     {
       "case": "fixture-won",
       "exit": 0,
-      "seconds": 0.448,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53,
-      "pty_frame_interval_median_ms": 154.04
+      "seconds": 0.567,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 55,
+      "pty_frame_interval_median_ms": 36.58
     },
     {
       "case": "fixture-game-over",
       "exit": 0,
-      "seconds": 0.285,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53,
-      "pty_frame_interval_median_ms": 155.18
+      "seconds": 0.291,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 55,
+      "pty_frame_interval_median_ms": 36.42
     },
     {
       "case": "fixture-damaged",
       "exit": 0,
-      "seconds": 0.292,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53
+      "seconds": 0.285,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 55,
+      "pty_frame_interval_median_ms": 34.83
     },
     {
       "case": "fault-error",
       "exit": 1,
-      "seconds": 0.056,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53
+      "seconds": 0.1,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 55
     },
     {
       "case": "fault-panic",
       "exit": 1,
-      "seconds": 0.042,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53
+      "seconds": 0.077,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 55
+    },
+    {
+      "case": "fallback-no-compression",
+      "exit": 0,
+      "seconds": 0.685,
+      "uploads": 7,
+      "compressed_uploads": 0,
+      "peak_images": 7,
+      "peak_placements": 55,
+      "pty_frame_interval_median_ms": 55.03
+    },
+    {
+      "case": "fallback-missing-compression",
+      "exit": 0,
+      "seconds": 0.688,
+      "uploads": 7,
+      "compressed_uploads": 0,
+      "peak_images": 7,
+      "peak_placements": 55,
+      "pty_frame_interval_median_ms": 51.07
+    },
+    {
+      "case": "fx-reduced",
+      "exit": 0,
+      "seconds": 0.544,
+      "uploads": 6,
+      "compressed_uploads": 6,
+      "peak_images": 6,
+      "peak_placements": 56,
+      "pty_frame_interval_median_ms": 16.78
+    },
+    {
+      "case": "fx-off",
+      "exit": 0,
+      "seconds": 0.543,
+      "uploads": 6,
+      "compressed_uploads": 6,
+      "peak_images": 6,
+      "peak_placements": 54,
+      "pty_frame_interval_median_ms": 16.34
+    },
+    {
+      "case": "effects-scene",
+      "exit": 0,
+      "seconds": 10.868,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 77,
+      "pty_frame_interval_median_ms": 17.46
     },
     {
       "case": "fps-60",
       "exit": 0,
-      "seconds": 1.428,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53,
-      "pty_frame_interval_median_ms": 16.61
+      "seconds": 1.45,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 69,
+      "pty_frame_interval_median_ms": 16.83
     },
     {
       "case": "fps-30",
       "exit": 0,
-      "seconds": 1.427,
-      "uploads": 9,
-      "peak_images": 9,
-      "peak_placements": 53,
-      "pty_frame_interval_median_ms": 33.61
+      "seconds": 1.446,
+      "uploads": 7,
+      "compressed_uploads": 7,
+      "peak_images": 7,
+      "peak_placements": 69,
+      "pty_frame_interval_median_ms": 33.28
     }
   ]
 }
