@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APC = re.compile(rb"\x1b_G(.*?)\x1b\\", re.S)
 PROBE_ID = 0x524943
 COMPRESSION_PROBE_ID = PROBE_ID + 1
+PLACEMENT_PROBE_NUMBER = PROBE_ID + 2
 
 
 def size(fd, cols=100, rows=40, width=1000, height=800):
@@ -48,6 +49,8 @@ def resources(data):
         fields = dict(item.split(b"=", 1) for item in control.split(b",") if b"=" in item)
         action = fields.get(b"a")
         number = int(fields.get(b"I", b"0"))
+        if number == PLACEMENT_PROBE_NUMBER:
+            continue  # startup probe image: placed and deleted during negotiation
         placement = int(fields.get(b"p", b"0"))
         if action == b"t":
             assert pending is None, "interleaved image transmission"
@@ -138,9 +141,13 @@ def run_case(name, argv, actions=(), reply="supported", expect=0, text=None, run
                     if reply != "silent":
                         graphics = f"\x1b_Gi={PROBE_ID};OK\x1b\\".encode() if reply != "no-graphics" else b""
                         compression = f"\x1b_Gi={COMPRESSION_PROBE_ID};{'EINVAL:unsupported' if reply == 'no-compression' else 'OK'}\x1b\\".encode() if reply != "missing-compression" else b""
+                        # "no-placement" mimics iTerm2 3.7.6: the placement reply names no image.
+                        upload = f"\x1b_Gi=9,I={PLACEMENT_PROBE_NUMBER};OK\x1b\\".encode() if reply != "no-graphics" else b""
+                        placed = b"" if reply == "no-graphics" else b"\x1b_Gp=1;OK\x1b\\" if reply == "no-placement" else f"\x1b_Gi=9,I={PLACEMENT_PROBE_NUMBER},p=1;OK\x1b\\".encode()
+                        version = b"\x1bP>|pty-harness 1.0\x1b\\"
                         flags = 3 if reply == "no-releases" else 11
                         # Include unrelated press/release input *among* the replies.
-                        os.write(fd, graphics + compression + key(97) + key(97, 3) + f"\x1b[?{flags}u\x1b[?2026;2$y\x1b[?62;4c".encode())
+                        os.write(fd, graphics + compression + upload + key(97) + placed + version + key(97, 3) + f"\x1b[?{flags}u\x1b[?2026;2$y\x1b[?62;4c".encode())
             if status is None:
                 done, child_status = os.waitpid(pid, os.WNOHANG)
                 if done:
@@ -192,8 +199,9 @@ def main():
     cases.append(run_case("quit-control-c", binary, [(0.15,key(99,modifier=5))]))
     for signum in [signal.SIGINT,signal.SIGTERM,signal.SIGHUP,signal.SIGQUIT,signal.SIGTSTP]:
         cases.append(run_case(f"signal-{signum.name}",binary,[(0.15,lambda p,f,s=signum:os.kill(p,s))]))
-    for reply in ["no-graphics","no-releases","silent"]:
-        cases.append(run_case(f"reject-{reply}",binary,reply=reply,expect=1,text="Required terminal capabilities",runtime=3.0))
+    for reply in ["no-graphics","no-placement","no-releases","silent"]:
+        cases.append(run_case(f"reject-{reply}",binary,reply=reply,expect=1,text="Full Kitty compatibility required",runtime=3.0))
+    cases.append(run_case("reject-message-names-terminal",binary,reply="no-placement",expect=1,text="pty-harness 1.0 did not confirm a Kitty image placement",runtime=3.0))
     for fixture,message in [("won","YOU WON"),("game-over","GAME OVER"),("damaged","READY")]:
         cases.append(run_case(f"fixture-{fixture}",["target/release/examples/acceptance",fixture],[(0.15,key(114)),(0.25,key(113))],text=message))
     for fault in ["error","panic"]:

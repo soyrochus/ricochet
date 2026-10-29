@@ -12,7 +12,7 @@ use ricochet::{
         kitty::{self, PixelPlacement, Registry, SourceRect},
         sprites::{self, Frame},
     },
-    terminal::{COMPRESSION_PROBE_ID, Geometry, PROBE_ID, Probe, Session},
+    terminal::{COMPRESSION_PROBE_ID, Geometry, PLACEMENT_PROBE_NUMBER, PROBE_ID, Probe, Session},
 };
 use std::{io::Read, time::Duration};
 fn contact(index: usize, hp_after: u8) -> Event {
@@ -83,7 +83,10 @@ fn compression_roundtrips_exact_dimensions_and_chunk_boundaries() {
 fn optional_probe_failures_do_not_reject_terminal_and_use_scale_two() {
     for reply in [None, Some("EINVAL:unsupported"), Some("OK")] {
         let mut p = Probe::default();
-        let mut stream = format!("\x1b_Gi={PROBE_ID};OK\x1b\\\x1b[?11u");
+        let n = PLACEMENT_PROBE_NUMBER;
+        let mut stream = format!(
+            "\x1b_Gi={PROBE_ID};OK\x1b\\\x1b_Gi=9,I={n};OK\x1b\\\x1b_Gi=9,I={n},p=1;OK\x1b\\\x1b[?11u"
+        );
         if let Some(reply) = reply {
             stream += &format!("\x1b_Gi={COMPRESSION_PROBE_ID};{reply}\x1b\\");
         }

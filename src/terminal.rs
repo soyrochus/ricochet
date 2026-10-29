@@ -22,6 +22,8 @@ use std::{
 pub const REQUIRED_KEYS: u8 = 1 | 2 | 8;
 pub const PROBE_ID: u32 = 0x524943;
 pub const COMPRESSION_PROBE_ID: u32 = PROBE_ID + 1;
+/// Image *number* (`I=`), matching how the renderer addresses sprites.
+pub const PLACEMENT_PROBE_NUMBER: u32 = PROBE_ID + 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Geometry {
@@ -167,6 +169,13 @@ impl Session<io::Stdout> {
 pub struct Probe {
     pub graphics: bool,
     pub compression: bool,
+    /// A test image was uploaded and placed by number with pixel offsets, as the
+    /// renderer does. A bare `a=q` query is not enough: iTerm2 3.7 answers it OK
+    /// yet acknowledges number-addressed placements without naming any image.
+    pub uploaded: bool,
+    pub placed: bool,
+    /// XTVERSION reply, used only to name the terminal in error messages.
+    pub terminal: Option<String>,
     pub keyboard: Option<u8>,
     pub synchronized: bool,
     pub barrier: bool,
@@ -186,21 +195,26 @@ impl Probe {
         } else {
             self.sequence.push(byte);
             let s = &self.sequence;
-            let complete = if s.starts_with(b"\x1b_G") {
+            let complete = if s.starts_with(b"\x1b_G") || s.starts_with(b"\x1bP") {
                 s.ends_with(b"\x1b\\")
             } else if s.starts_with(b"\x1b[") {
                 s.len() > 2 && (0x40..=0x7e).contains(&byte)
             } else {
-                s.len() >= 3 || (s.len() == 2 && byte != b'_' && byte != b'O')
+                s.len() >= 3 || (s.len() == 2 && !matches!(byte, b'_' | b'O' | b'P'))
             };
             if complete {
-                let text = String::from_utf8_lossy(s);
-                if text == format!("\x1b_Gi={PROBE_ID};OK\x1b\\") {
-                    self.graphics = true;
-                } else if text.starts_with(&format!("\x1b_Gi={COMPRESSION_PROBE_ID};")) {
-                    self.compression = text.ends_with(";OK\x1b\\");
-                } else if text.starts_with(&format!("\x1b_Gi={PROBE_ID};")) {
-                    // Our failed query is a reply, never keyboard input.
+                let text = String::from_utf8_lossy(s).into_owned();
+                if let Some(body) = text
+                    .strip_prefix("\x1b_G")
+                    .and_then(|t| t.strip_suffix("\x1b\\"))
+                {
+                    // Graphics replies are never keyboard input.
+                    self.graphics_reply(body);
+                } else if let Some(name) = text
+                    .strip_prefix("\x1bP>|")
+                    .and_then(|t| t.strip_suffix("\x1b\\"))
+                {
+                    self.terminal = Some(printable(name)).filter(|n| !n.is_empty());
                 } else if text.starts_with("\x1b[?") && text.ends_with('u') {
                     self.keyboard = text[3..text.len() - 1].parse().ok();
                 } else if text.starts_with("\x1b[?2026;") && text.ends_with("$y") {
@@ -220,12 +234,62 @@ impl Probe {
         }
         Ok(())
     }
-    pub fn supported(&self) -> bool {
-        self.graphics
-            && self
-                .keyboard
-                .is_some_and(|v| v & REQUIRED_KEYS == REQUIRED_KEYS)
+    fn graphics_reply(&mut self, body: &str) {
+        let (keys, message) = body.split_once(';').unwrap_or((body, ""));
+        let field = |name: &str| {
+            keys.split(',').find_map(|kv| {
+                kv.strip_prefix(name)?
+                    .strip_prefix('=')?
+                    .parse::<u32>()
+                    .ok()
+            })
+        };
+        let ok = message == "OK";
+        let (id, number) = (field("i"), field("I"));
+        match (id, number, field("p")) {
+            // A placement reply naming no image is not a confirmation.
+            (_, _, Some(1)) => self.placed = ok && (id.is_some() || number.is_some()),
+            (_, Some(PLACEMENT_PROBE_NUMBER), None) => self.uploaded = ok,
+            (Some(PROBE_ID), None, None) => self.graphics = ok,
+            // Optional: a rejection only selects uncompressed uploads.
+            (Some(COMPRESSION_PROBE_ID), None, None) => self.compression = ok,
+            _ => {}
+        }
     }
+    pub fn supported(&self) -> bool {
+        self.failure().is_none()
+    }
+    /// Why the terminal cannot run Ricochet, naming it when XTVERSION answered.
+    pub fn failure(&self) -> Option<String> {
+        let reason = if !self.barrier {
+            "did not answer capability queries within 2 seconds"
+        } else if !self.graphics {
+            "does not support Kitty graphics"
+        } else if !(self.uploaded && self.placed) {
+            "did not confirm a Kitty image placement"
+        } else if !self
+            .keyboard
+            .is_some_and(|v| v & REQUIRED_KEYS == REQUIRED_KEYS)
+        {
+            "does not support Kitty keyboard flags 1+2+8"
+        } else {
+            return None;
+        };
+        let terminal = self.terminal.as_deref().unwrap_or("This terminal");
+        Some(format!(
+            "Full Kitty compatibility required.\n{terminal} {reason}. Run Ricochet directly in Ghostty 1.4+ or another terminal that is fully compatible with the Kitty graphics and keyboard protocols."
+        ))
+    }
+}
+
+/// Terminal-supplied text is echoed to the user only as bounded printable ASCII.
+fn printable(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_ascii_graphic() || *c == ' ')
+        .take(64)
+        .collect::<String>()
+        .trim()
+        .to_owned()
 }
 
 pub struct Capabilities {
@@ -241,9 +305,12 @@ pub fn negotiate(out: &mut impl Write, shutdown: &AtomicBool) -> io::Result<Capa
     let compressed = STANDARD.encode(crate::render::kitty::compress(&[0; 4])?);
     // No Crossterm event::poll/read/support queries are used until this phase
     // finishes. Crossterm 0.29 doesn't expose Kitty APC replies publicly.
+    // A transparent 1x1 image is uploaded and placed by number exactly as the
+    // renderer places sprites, then deleted; both steps must be acknowledged.
+    // XTVERSION names the terminal in errors and is never capability evidence.
     write!(
         out,
-        "\x1b_Ga=q,i={PROBE_ID},s=1,v=1,t=d,f=24;AAAA\x1b\\\x1b_Ga=q,i={COMPRESSION_PROBE_ID},s=1,v=1,t=d,f=32,o=z;{compressed}\x1b\\\x1b[?u\x1b[?2026$p\x1b[c"
+        "\x1b_Ga=q,i={PROBE_ID},s=1,v=1,t=d,f=24;AAAA\x1b\\\x1b_Ga=q,i={COMPRESSION_PROBE_ID},s=1,v=1,t=d,f=32,o=z;{compressed}\x1b\\\x1b_Ga=t,t=d,f=32,I={PLACEMENT_PROBE_NUMBER},s=1,v=1;AAAAAA==\x1b\\\x1b[1;1H\x1b_Ga=p,I={PLACEMENT_PROBE_NUMBER},p=1,X=1,Y=1,z=1,C=1\x1b\\\x1b_Ga=d,d=N,I={PLACEMENT_PROBE_NUMBER},q=2\x1b\\\x1b[>0q\x1b[?u\x1b[?2026$p\x1b[c"
     )?;
     out.flush()?;
     let mut probe = Probe::default();
@@ -259,10 +326,8 @@ pub fn negotiate(out: &mut impl Write, shutdown: &AtomicBool) -> io::Result<Capa
             probe.push(byte)?;
         }
     }
-    if !probe.barrier || !probe.supported() {
-        return Err(io::Error::other(
-            "Required terminal capabilities unavailable: Kitty RGBA graphics and enhanced keyboard flags 1+2+8 (press/repeat/release for ordinary keys). Use Ghostty 1.4+ directly. Probe timed out or was rejected within 2 seconds.",
-        ));
+    if let Some(reason) = probe.failure() {
+        return Err(io::Error::other(reason));
     }
     let geometry = Geometry::read()?;
     if geometry.cell().is_none() {
@@ -353,18 +418,65 @@ impl Drop for Signals {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn probe_preserves_input_and_verifies_flags() {
+    fn probed(stream: &str) -> Probe {
         let mut p = Probe::default();
-        let stream =
-            format!(" \x1b[97;1:1u\x1b_Gi={PROBE_ID};OK\x1b\\\x1b[?11u\x1b[?2026;2$y\x1b[?62;4c");
         for b in stream.bytes() {
             p.push(b).unwrap();
         }
+        p
+    }
+    // Replies as sent by a fully compatible terminal for the number probe.
+    const UPLOAD_OK: &str = "\x1b_Gi=31,I=5392709;OK\x1b\\";
+    const PLACE_OK: &str = "\x1b_Gi=31,I=5392709,p=1;OK\x1b\\";
+    #[test]
+    fn probe_preserves_input_and_verifies_flags() {
+        assert_eq!(PLACEMENT_PROBE_NUMBER, 5392709);
+        let mut p = probed(&format!(
+            " \x1b[97;1:1u\x1b_Gi={PROBE_ID};OK\x1b\\{UPLOAD_OK}{PLACE_OK}\x1bP>|ghostty 1.4.0\x1b\\\x1b[?11u\x1b[?2026;2$y\x1b[?62;4c"
+        ));
         assert!(p.supported() && p.synchronized && p.barrier);
         assert_eq!(p.unrelated, b" \x1b[97;1:1u");
+        assert_eq!(p.terminal.as_deref(), Some("ghostty 1.4.0"));
         p.keyboard = Some(3);
-        assert!(!p.supported());
+        assert!(
+            p.failure()
+                .unwrap()
+                .contains("ghostty 1.4.0 does not support Kitty keyboard")
+        );
+    }
+    #[test]
+    fn placement_reply_naming_no_image_requires_full_kitty() {
+        // Observed from iTerm2 3.7.6: a=q and the upload are OK, the placement
+        // reply is a bare `p=1;OK`, and nothing is drawn.
+        let p = probed(&format!(
+            "\x1b_Gi={PROBE_ID};OK\x1b\\\x1b_Gi=2,I=5392709;OK\x1b\\\x1b_Gp=1;OK\x1b\\\x1bP>|iTerm2 3.7.6\x1b\\\x1b[?11u\x1b[?62;4c"
+        ));
+        assert!(!p.supported() && p.unrelated.is_empty());
+        assert_eq!(
+            p.failure().unwrap(),
+            "Full Kitty compatibility required.\niTerm2 3.7.6 did not confirm a Kitty image placement. Run Ricochet directly in Ghostty 1.4+ or another terminal that is fully compatible with the Kitty graphics and keyboard protocols."
+        );
+    }
+    #[test]
+    fn missing_or_rejected_graphics_require_full_kitty() {
+        let rejected = format!(
+            "\x1b_Gi={PROBE_ID};OK\x1b\\\x1b_GI=5392709;EINVAL:bad\x1b\\{PLACE_OK}\x1b[?11u\x1b[?62c"
+        );
+        for (stream, reason) in [
+            (
+                rejected.as_str(),
+                "This terminal did not confirm a Kitty image placement",
+            ),
+            (
+                "\x1b[?11u\x1b[?62c",
+                "This terminal does not support Kitty graphics",
+            ),
+            ("", "did not answer capability queries within 2 seconds"),
+        ] {
+            let message = probed(stream).failure().unwrap();
+            assert!(message.starts_with("Full Kitty compatibility required.\n"));
+            assert!(message.contains(reason), "{message}");
+        }
     }
     #[test]
     fn cleanup_after_partial_initialization_is_idempotent() {

@@ -59,11 +59,15 @@ restoring a playable size. A focus change pauses an active run and never resumes
 it automatically.
 
 The startup probe checks actual Kitty graphics support and enhanced keyboard
-flags **1 + 2 + 8**, including ordinary-letter release events. Missing required
-capabilities cause a clean exit with an explanation. An additional bounded probe
+flags **1 + 2 + 8**, including ordinary-letter release events. Beyond the image
+query, it uploads a transparent 1 × 1 test image and places it by image number
+with pixel offsets, exactly as sprites are placed; the placement reply must name
+the image. Partial implementations (iTerm2 3.7.6 acknowledges such placements
+without drawing them) exit cleanly with **Full Kitty compatibility required**,
+followed by the terminal's XTVERSION name and the failed check. An additional bounded probe
 checks zlib uploads; rejection or no reply selects uncompressed uploads and a
-2.0 scale cap, without preventing startup. `TERM`/`TERM_PROGRAM` are
-not used as capability evidence.
+2.0 scale cap, without preventing startup. `TERM`/`TERM_PROGRAM` and the
+XTVERSION name are not used as capability evidence.
 
 ## Why Ghostty?
 

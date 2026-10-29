@@ -80,14 +80,16 @@ decoded-image bound; timing measurements remain hardware-dependent.
 
 ## Synthetic PTY observations
 
-[pty-results.json](pty-results.json) contains the final 24 cases. The harness
+[pty-results.json](pty-results.json) contains the final 26 cases. The harness
 supplies capability responses and validates emitted commands; it is not Ghostty.
 It also base64-decodes/decompresses every image, checks the exact RGBA dimensions,
 validates source rectangles against their uploaded images and models ownership.
 
 - Successful probes use compressed uploads throughout. Explicit compression
   rejection and an absent reply both start successfully with raw uploads.
-  Missing graphics, missing enhanced keys and a silent terminal reject cleanly;
+  Missing graphics, a test placement whose reply names no image (as observed
+  from iTerm2 3.7.6), missing enhanced keys and a silent terminal reject cleanly
+  with "Full Kitty compatibility required" and the terminal's XTVERSION name;
   the silent negotiation stops at the two-second deadline.
 - The diagnostic receives ordinary-letter releases and startup-preserved input.
   Production flow exercises movement, focus loss/gain, pause, restart, resize
