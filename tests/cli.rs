@@ -10,14 +10,29 @@ fn help_version_and_bad_arguments_work_without_terminal() {
         assert!(output.status.success());
         assert!(!output.stdout.contains(&27));
     }
-    for args in [vec!["--fps"], vec!["--fps", "120"], vec!["--unknown"]] {
+    for args in [
+        vec!["--fps"],
+        vec!["--fps", "120"],
+        vec!["--unknown"],
+        vec!["--sound"],
+        vec!["--sound", "loud"],
+    ] {
         assert!(parse(args.into_iter().map(str::to_owned)).is_err());
     }
     assert_eq!(
         parse(["--fps".to_owned(), "30".to_owned()]).unwrap(),
         Cli::Run {
             fps: 30,
-            fx: ricochet::render::fx::Level::Full
+            fx: ricochet::render::fx::Level::Full,
+            sound: ricochet::audio::Level::On
+        }
+    );
+    assert_eq!(
+        parse(["--sound".to_owned(), "off".to_owned()]).unwrap(),
+        Cli::Run {
+            fps: 60,
+            fx: ricochet::render::fx::Level::Full,
+            sound: ricochet::audio::Level::Off
         }
     );
     let output = Command::new(env!("CARGO_BIN_EXE_ricochet"))

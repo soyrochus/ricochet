@@ -17,6 +17,16 @@ gameplay. Clear three levels with three lives, using arrows or A/D to steer.
 The playfield uses Kitty graphics; scores, controls and state messages remain
 ordinary terminal text.
 
+## New in 0.3.0
+
+- Short, synthesized bump sound effects: distinct tones for wall, paddle and
+  brick contacts (and a brighter tone when a brick is destroyed). No music, no
+  continuous or ball-motion sound, and no asset file — every tone is generated
+  in Rust at startup, the same way the sprites and pixel font are.
+- `--sound on|off` (default: on). Sound is purely presentational: gameplay is
+  identical either way, and the game starts and runs normally with no audio
+  device present.
+
 ## New in 0.2.0
 
 - Anti-aliased procedural art: gradient bricks, bevels, damage cracks, shadows,
@@ -44,13 +54,16 @@ cargo run --release
 cargo run --release -- --fps 30
 cargo run --release -- --fx reduced
 cargo run --release -- --fx off
+cargo run --release -- --sound off
 cargo run -- --help
 cargo run -- --version
 ```
 
-The defaults are **60 FPS** and **full effects**. Use `--fx reduced` for fewer
-particles, a shorter trail and no shake or overlay; `--fx off` keeps the new art
-and static banners without transient effects.
+The defaults are **60 FPS**, **full effects** and **sound on**. Use `--fx reduced`
+for fewer particles, a shorter trail and no shake or overlay; `--fx off` keeps
+the new art and static banners without transient effects. `--sound off` is
+silent throughout; otherwise wall, paddle and brick contacts each play a short,
+distinct tone.
 
 Use at least **80 columns × 30 rows**, with enough physical pixels for a
 **400 × 300** playfield after reserving four text rows. A larger window improves
@@ -146,6 +159,15 @@ the ordinary text HUD, including READY, level changes, PAUSED and end states.
   launch/restart notifications immediately; physics ticks return contacts and
   life/level/end transitions.
 - `render/fx.rs`: logical effect positions and fixed pools; no Kitty commands.
+- `audio.rs`: five short tones (wall, paddle, brick ×3) synthesized once at
+  startup from a pitch-sweep oscillator, a quiet upper harmonic, an
+  attack/decay envelope and a one-pole low-pass, then peak-normalised; a pure,
+  deterministic function with no file, network or randomness dependency.
+  `Event::Contact` is mapped to a tone and mixed through `rodio`'s `playback`
+  feature only (no file decoders); a fixed 8-voice pool bounds concurrent
+  one-shots. Opening the output device, like the compression probe, never
+  blocks startup: on failure, or with `--sound off`, sound is a true no-op.
+  Transition events (launch, life lost, level/game end) are not sounded.
 - `render/sprites.rs`, `render/font.rs`: adaptive 4×4 edge coverage, straight RGBA,
   padded atlases and generated lettering. `flate2` uses only its pure Rust
   backend; no image, font or randomness dependency is needed.
@@ -238,6 +260,7 @@ saved scores and configuration files are outside this release's scope.
 - [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)
 - [Crossterm 0.29 events](https://docs.rs/crossterm/0.29.0/crossterm/event/index.html)
 - [Ghostty 1.4 release notes](https://ghostty.org/docs/install/release-notes/1-4-0)
+- [rodio 0.23 (`playback` feature only)](https://docs.rs/rodio/0.23.0/rodio/)
 
 ## Principles of Participation
 

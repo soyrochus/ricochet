@@ -534,7 +534,11 @@ fn cli_accepts_every_effect_level_and_rejects_invalid_values() {
     ] {
         assert_eq!(
             parse(["--fx".into(), value.into(), "--fps".into(), "30".into()]).unwrap(),
-            Cli::Run { fps: 30, fx }
+            Cli::Run {
+                fps: 30,
+                fx,
+                sound: ricochet::audio::Level::On
+            }
         );
     }
     for args in [vec!["--fx"], vec!["--fx", "quiet"]] {

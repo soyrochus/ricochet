@@ -1,4 +1,5 @@
 pub mod app;
+pub mod audio;
 pub mod constants;
 pub mod game;
 pub mod input;

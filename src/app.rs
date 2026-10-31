@@ -1,4 +1,5 @@
 use crate::{
+    audio::{Audio, Level as SoundLevel},
     game::{Event as GameEvent, Game},
     input::{Action, Input},
     render::{Renderer, Viewport, fx::Level as FxLevel},
@@ -36,17 +37,22 @@ pub fn restored_errors(
     }
 }
 
-pub const HELP: &str = "Ricochet - pixel Breakout for Ghostty 1.4+ on macOS/Linux\n\nUsage: ricochet [--fps 30|60] [--fx full|reduced|off] [--help] [--version]\n\n--fps 30|60          Render rate (default: 60)\n--fx full|reduced|off Effects level (default: full); reduced omits shake/overlay\n                     and limits particles/trail; off keeps static art/banners\n\nLeft/Right or A/D: move while held (both directions cancel)\nSpace: start / launch   P or Escape: pause / resume\nR: restart from pause or end screen   Q / Ctrl-C: quit\n\nRequires interactive stdin/stdout, Kitty graphics and enhanced key releases,\nand at least 80x30 cells with 400x300 drawable pixels.\nSIGTSTP exits cleanly; Ctrl-Z is ignored; suspend/resume is unsupported.\n";
+pub const HELP: &str = "Ricochet - pixel Breakout for Ghostty 1.4+ on macOS/Linux\n\nUsage: ricochet [--fps 30|60] [--fx full|reduced|off] [--sound on|off] [--help] [--version]\n\n--fps 30|60          Render rate (default: 60)\n--fx full|reduced|off Effects level (default: full); reduced omits shake/overlay\n                     and limits particles/trail; off keeps static art/banners\n--sound on|off        Bump sound effects (default: on); wall, paddle and brick\n                     contacts only, no music and no continuous sound\n\nLeft/Right or A/D: move while held (both directions cancel)\nSpace: start / launch   P or Escape: pause / resume\nR: restart from pause or end screen   Q / Ctrl-C: quit\n\nRequires interactive stdin/stdout, Kitty graphics and enhanced key releases,\nand at least 80x30 cells with 400x300 drawable pixels.\nSIGTSTP exits cleanly; Ctrl-Z is ignored; suspend/resume is unsupported.\n";
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Cli {
     Help,
     Version,
-    Run { fps: u32, fx: FxLevel },
+    Run {
+        fps: u32,
+        fx: FxLevel,
+        sound: SoundLevel,
+    },
 }
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     let mut fps = 60;
     let mut fx = FxLevel::Full;
+    let mut sound = SoundLevel::On;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -67,10 +73,17 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
                     _ => return Err("--fx requires full, reduced or off".to_owned()),
                 }
             }
+            "--sound" => {
+                sound = match args.next().as_deref() {
+                    Some("on") => SoundLevel::On,
+                    Some("off") => SoundLevel::Off,
+                    _ => return Err("--sound requires on or off".to_owned()),
+                }
+            }
             _ => return Err(format!("unknown argument: {arg} (try --help)")),
         }
     }
-    Ok(Cli::Run { fps, fx })
+    Ok(Cli::Run { fps, fx, sound })
 }
 
 /// Pure controller shared by the real event loop and acceptance tests.
@@ -149,13 +162,13 @@ impl Controller {
     }
 }
 
-pub fn run(fps: u32, fx: FxLevel) -> io::Result<()> {
-    run_game_with_fx(fps, Game::default(), fx)
+pub fn run(fps: u32, fx: FxLevel, sound: SoundLevel) -> io::Result<()> {
+    run_game_with_fx(fps, Game::default(), fx, sound)
 }
 pub fn run_game(fps: u32, game: Game) -> io::Result<()> {
-    run_game_with_fx(fps, game, FxLevel::Full)
+    run_game_with_fx(fps, game, FxLevel::Full, SoundLevel::On)
 }
-pub fn run_game_with_fx(fps: u32, game: Game, fx: FxLevel) -> io::Result<()> {
+pub fn run_game_with_fx(fps: u32, game: Game, fx: FxLevel, sound: SoundLevel) -> io::Result<()> {
     if !matches!(fps, 30 | 60) {
         return Err(io::Error::other("FPS must be 30 or 60"));
     }
@@ -170,6 +183,7 @@ pub fn run_game_with_fx(fps: u32, game: Game, fx: FxLevel) -> io::Result<()> {
     };
     control.geometry(geometry);
     let mut renderer = Renderer::new(fx);
+    let audio = Audio::new(sound);
     let interval = Duration::from_secs_f64(1.0 / f64::from(fps));
     let mut previous = Instant::now();
     let mut render_at = previous;
@@ -225,6 +239,7 @@ pub fn run_game_with_fx(fps: u32, game: Game, fx: FxLevel) -> io::Result<()> {
         }
         if now >= render_at {
             let events = control.drain_events();
+            audio.ingest(&events);
             renderer.draw(
                 &mut session,
                 geometry,
