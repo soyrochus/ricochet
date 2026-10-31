@@ -1,0 +1,61 @@
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_TOOLCHAIN: '1.99.1'
+  CARGO_TERM_COLOR: always
+  RUSTDOCFLAGS: '-D warnings'
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install system libraries and Rust checks
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libasound2-dev
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy --no-self-update
+          echo "RUSTUP_TOOLCHAIN=$RUST_TOOLCHAIN" >> "$GITHUB_ENV"
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check Rust idioms
+        run: |
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo clippy --all-targets --features dev-harness --locked -- -D warnings
+      - name: Run tests, with and without the development harness
+        run: |
+          cargo test --locked
+          cargo test --features dev-harness --locked
+      - name: Check Rust documentation
+        run: cargo doc --no-deps --locked
+      - name: Build development-harness examples, then the plain release binary
+        run: |
+          cargo build --release --examples --features dev-harness --locked
+          cargo build --release --locked
+      - name: Synthetic PTY protocol/lifecycle checks (not a Ghostty emulator)
+        run: python3 tools/verify_pty.py --output verification/pty-results.json
+      - name: No-terminal release measurements (regeneration time, memory, frame budget)
+        run: cargo run --release --features dev-harness --example visual_metrics --locked
+      - name: Report verification scope
+        run: |
+          echo 'This synthetic PTY harness checks protocol and lifecycle behaviour.'
+          echo 'It does not establish real Ghostty visual or input compatibility;'
+          echo 'see README.md and verification/REPORT.md for that acceptance gap.'
